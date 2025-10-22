@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  neo4j:
+    image: neo4j:5.11
+    container_name: neo4j
+    ports:
+      - "7474:7474"   # HTTP
+      - "7687:7687"   # BOLT
+    environment:
+      NEO4J_AUTH: "neo4j/testpassword"
+    volumes:
+      - neo4j_data:/data
+volumes:
+  neo4j_data:
