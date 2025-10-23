@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Editar perfil</title>
+  <style>
+    :root { --red: #d32f2f; --red-dark: #b71c1c; --black: #111; --white: #fff; --border:#e6e6e6; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; background: var(--white); color: var(--black); }
+  .center-box { max-width: 560px; margin: 8vh auto; background: var(--white); border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,0.12); padding: 24px 28px; border: 1px solid var(--border); }
+  .form-section { padding: 12px; }
+    h1 { margin: 0 0 16px; font-size: 22px; text-align: center; }
+    form { display: grid; gap: 14px; }
+    label { font-size: 14px; color: var(--black); margin-bottom: 8px; }
+    input[type="text"], input[type="url"], input[type="date"], select, textarea {
+      width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; font-size: 14px; background: var(--white); color: var(--black);
+    }
+    textarea { min-height: 100px; resize: vertical; }
+    .btn { background: var(--red); color: var(--white); border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 14px; font-weight: 600; }
+    .btn:hover { background: var(--red-dark); }
+    .error { color: var(--red-dark); background: #fff5f5; border: 1px solid #ffd6d6; padding: 10px 12px; border-radius: 12px; font-size: 13px; }
+    .actions { display: flex; gap: 12px; justify-content: flex-end; }
+    .row { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    .form-section .row { margin-bottom: 18px; }
+    .image-preview { display: flex; align-items: center; justify-content: center; width: 160px; height: 160px; border-radius: 12px; border: 1px solid var(--border); overflow: hidden; background: #fafafa; margin: 0 auto; }
+    .image-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .cover-preview { width: 100%; max-width: 100%; height: 180px; border-radius: 12px; border: 1px solid var(--border); overflow: hidden; background: #fafafa; }
+    .cover-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .change-text { text-align: center; font-size: 13px; color: #444; margin-top: 6px; }
+    .change-text label { cursor: pointer; text-decoration: underline; }
+    .file-input { display: none; }
+    .hint { font-size: 12px; color: #666; }
+    .modal {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 1000;
+    }
+    .modal.open { display: flex; }
+    .modal-card { background: var(--white); border-radius: 12px; width: min(92vw, 900px); max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
+    .modal-header { padding: 10px 14px; border-bottom: 1px solid #eee; font-weight: 600; }
+    .modal-body { padding: 12px; overflow: auto; }
+    .modal-actions { padding: 10px 14px; border-top: 1px solid #eee; display: flex; gap: 10px; justify-content: flex-end; }
+    .crop-container { width: 100%; max-height: 60vh; }
+    .btn-outline { background: transparent; color: var(--black); border: 1px solid #ddd; padding: 8px 12px; border-radius: 10px; cursor: pointer; }
+    @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="center-box">
+    <h1>Editar perfil</h1>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/profile-edit" enctype="multipart/form-data">
+      {% csrf_token %}
+      <section class="form-section">
+        <!-- Imagen de perfil -->
+        <div class="row">
+          <div>
+            <div class="image-preview" aria-label="Vista previa de imagen de perfil">
+              {% if profile_image_url %}
+                <img src="{{ profile_image_url }}" alt="Imagen de perfil" />
+              {% else %}
+                <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><rect fill='%23eeeeee' width='100%' height='100%'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23888' font-size='14'>Perfil</text></svg>" alt="Sin imagen de perfil" />
+              {% endif %}
+            </div>
+            <div class="change-text"><label for="profile_image">Cambiar foto de perfil</label></div>
+            <input id="profile_image" class="file-input" name="profile_image" type="file" accept="image/png,image/jpeg" />
+            <input type="hidden" name="profile_image_cropped" id="profile_image_cropped" />
+          </div>
+        </div>
+
+        <!-- Imagen de presentación -->
+        <div class="row">
+          <div>
+            <div class="cover-preview" aria-label="Vista previa de imagen de presentación">
+              {% if cover_image_url %}
+                <img src="{{ cover_image_url }}" alt="Imagen de presentación" />
+              {% else %}
+                <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='180'><rect fill='%23eeeeee' width='100%' height='100%'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23888' font-size='14'>Presentación</text></svg>" alt="Sin imagen de presentación" />
+              {% endif %}
+            </div>
+            <div class="change-text"><label for="cover_image">Cambiar imagen de presentación</label></div>
+            <input id="cover_image" class="file-input" name="cover_image" type="file" accept="image/png,image/jpeg" />
+            <input type="hidden" name="cover_image_cropped" id="cover_image_cropped" />
+          </div>
+        </div>
+
+        <!-- Género -->
+        <div class="row">
+          <div>
+            <label for="gender">Género</label>
+            <select id="gender" name="gender">
+              <option value="" {% if not gender %}selected{% endif %}>Prefiero no decir</option>
+              {% for g in genders %}
+                <option value="{{ g }}" {% if gender == g %}selected{% endif %}>{{ g|title }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <!-- Fecha de nacimiento -->
+        <div class="row">
+          <div>
+            <label for="birthdate">Fecha de nacimiento</label>
+            <input id="birthdate" name="birthdate" type="date" value="{{ birthdate }}" />
+          </div>
+        </div>
+
+        <!-- Descripción -->
+        <div class="row">
+          <div>
+            <label for="bio">Descripción</label>
+            <div class="hint">Máximo 200 caracteres.</div>
+            <textarea id="bio" name="bio" placeholder="Cuéntanos sobre ti..." maxlength="200">{{ bio }}</textarea>
+            <div id="bio-count" class="hint" style="margin-top:6px;">0 / 200</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <a class="btn" href="/home" style="text-decoration:none; display:inline-flex; align-items:center;">Cancelar</a>
+          <button class="btn" type="submit">Guardar</button>
+        </div>
+      </section>
+    </form>
+  </div>
+  <!-- Cropper modal -->
+  <div id="cropperModal" class="modal" role="dialog" aria-modal="true" aria-label="Recortar imagen">
+    <div class="modal-card">
+      <div class="modal-header">Recortar imagen</div>
+      <div class="modal-body">
+        <div class="crop-container">
+          <img id="cropperImage" alt="Imagen a recortar" style="max-width:100%; display:block;" />
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-outline" id="cropperCancel">Cancelar</button>
+        <button type="button" class="btn" id="cropperApply">Aplicar recorte</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cropper.js CDN -->
+  <link rel="stylesheet" href="https://unpkg.com/cropperjs@1.6.2/dist/cropper.min.css"/>
+  <script src="https://unpkg.com/cropperjs@1.6.2/dist/cropper.min.js"></script>
+  <script>
+    (function(){
+      const bio = document.getElementById('bio');
+      const count = document.getElementById('bio-count');
+      if (bio && count) {
+        const update = () => { count.textContent = (bio.value || '').length + ' / 200'; };
+        bio.addEventListener('input', update);
+        update();
+      }
+
+      // Cropping logic
+      const modal = document.getElementById('cropperModal');
+      const imgEl = document.getElementById('cropperImage');
+      const btnApply = document.getElementById('cropperApply');
+      const btnCancel = document.getElementById('cropperCancel');
+      const profileInput = document.getElementById('profile_image');
+      const coverInput = document.getElementById('cover_image');
+      const profileHidden = document.getElementById('profile_image_cropped');
+      const coverHidden = document.getElementById('cover_image_cropped');
+      const profilePreview = document.querySelector('.image-preview img');
+      const coverPreview = document.querySelector('.cover-preview img');
+
+      let cropper = null;
+      let currentKind = null; // 'profile' | 'cover'
+
+      function openCropper(file, kind) {
+        currentKind = kind;
+        // Validate type
+        if (!file || !/^image\/(png|jpeg)$/.test(file.type)) {
+          alert('El archivo debe ser PNG o JPG.');
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = e => {
+          imgEl.src = e.target.result;
+          modal.classList.add('open');
+          // Destroy previous
+          if (cropper) { cropper.destroy(); cropper = null; }
+          const aspectRatio = (kind === 'profile') ? 1 : 3;
+          cropper = new Cropper(imgEl, {
+            aspectRatio,
+            viewMode: 1,
+            autoCropArea: 1,
+            movable: true,
+            zoomable: true,
+            scalable: false,
+            responsive: true,
+            background: false,
+          });
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function closeCropper() {
+        if (cropper) { cropper.destroy(); cropper = null; }
+        modal.classList.remove('open');
+        imgEl.src = '';
+        currentKind = null;
+      }
+
+      profileInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        openCropper(file, 'profile');
+      });
+      coverInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        openCropper(file, 'cover');
+      });
+
+      btnCancel.addEventListener('click', closeCropper);
+      modal.addEventListener('click', (e) => { if (e.target === modal) closeCropper(); });
+
+      btnApply.addEventListener('click', () => {
+        if (!cropper || !currentKind) return;
+        const width = (currentKind === 'profile') ? 500 : 1500;
+        const height = (currentKind === 'profile') ? 500 : 500;
+        const canvas = cropper.getCroppedCanvas({ width, height, imageSmoothingQuality: 'high' });
+        if (!canvas) { alert('No se pudo generar el recorte.'); return; }
+        // Export as JPEG by default to reduce size
+        canvas.toBlob((blob) => {
+          if (!blob) { alert('No se pudo exportar la imagen.'); return; }
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const dataUrl = reader.result; // data:image/jpeg;base64,...
+            if (currentKind === 'profile') {
+              profileHidden.value = dataUrl;
+              profilePreview.src = dataUrl;
+            } else {
+              coverHidden.value = dataUrl;
+              coverPreview.src = dataUrl;
+            }
+            closeCropper();
+          };
+          reader.readAsDataURL(blob);
+        }, 'image/jpeg', 0.9);
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -131,3 +131,7 @@ APPEND_SLASH = False
 # Neo4j connection for neomodel (used by app models)
 # In production, prefer reading from environment variables
 NEO4J_BOLT_URL = 'bolt://neo4j:testpassword@localhost:7687'
+
+# Media (uploads)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'

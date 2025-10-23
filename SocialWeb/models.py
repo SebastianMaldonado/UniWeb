@@ -1,5 +1,13 @@
 from django.db import models  # Not used for our User node, kept for potential future Django models
-from neomodel import StructuredNode, StringProperty, UniqueIdProperty, DateTimeProperty
+from neomodel import (
+	StructuredNode,
+	StringProperty,
+	UniqueIdProperty,
+	DateTimeProperty,
+	DateProperty,
+	RelationshipTo,
+	RelationshipFrom,
+)
 
 
 class User(StructuredNode):
@@ -18,6 +26,17 @@ class User(StructuredNode):
 	email = StringProperty(unique_index=True, required=True)
 	password_hash = StringProperty(required=True)
 	created_at = DateTimeProperty(default_now=True)
+
+	# Profile fields
+	profile_image_url = StringProperty(required=False)
+	cover_image_url = StringProperty(required=False)
+	gender = StringProperty(required=False)  # e.g., 'masculino', 'femenino', 'otro'
+	bio = StringProperty(required=False)
+	birthdate = DateProperty(required=False)
+
+	# Social graph
+	following = RelationshipTo('User', 'FOLLOWS')
+	followers = RelationshipFrom('User', 'FOLLOWS')
 
 	def __str__(self) -> str:  # pragma: no cover - helper only
 		return f"User(username={self.username})"
