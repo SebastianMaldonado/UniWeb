@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Registro</title>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background: #f5f6fa; }
+    .center-box { max-width: 420px; margin: 8vh auto; background: #fff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.08); padding: 28px; }
+    h1 { margin: 0 0 12px; font-size: 22px; text-align: center; }
+    form { display: grid; gap: 12px; }
+    label { font-size: 14px; color: #333; }
+    input[type="text"], input[type="password"], input[type="email"] {
+      width: 100%; padding: 10px 12px; border: 1px solid #dcdde1; border-radius: 8px; font-size: 14px;
+    }
+    .btn { background: #27ae60; color: white; border: none; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    .btn:hover { background: #1f8a4c; }
+    .hint { font-size: 12px; color: #777; }
+    .error { color: #c0392b; background: #fdecea; border: 1px solid #f5c2c0; padding: 8px 10px; border-radius: 8px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="center-box">
+    <h1>Registro</h1>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/register">
+      {% csrf_token %}
+      <div>
+        <label for="username">Nombre de usuario</label>
+        <input id="username" name="username" type="text" pattern="^[A-Za-z0-9_]+$" title="Solo letras, números y _" required />
+        <div class="hint">Sin espacios ni caracteres especiales. Solo letras, números y _.</div>
+      </div>
+      <div>
+        <label for="email">Correo electrónico</label>
+        <input id="email" name="email" type="email" required />
+      </div>
+      <div>
+        <label for="password">Contraseña</label>
+        <input id="password" name="password" type="password" required />
+      </div>
+      <div>
+        <label for="password2">Repetir contraseña</label>
+        <input id="password2" name="password2" type="password" required />
+      </div>
+      <button class="btn" type="submit">Registrarse</button>
+    </form>
+  </div>
+</body>
+</html>

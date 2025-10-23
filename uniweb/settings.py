@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'SocialWeb',
 ]
 
 MIDDLEWARE = [
@@ -120,3 +121,13 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Use cookie-based sessions to avoid relying on the relational DB for sessions
+SESSION_ENGINE = 'django.contrib.sessions.backends.signed_cookies'
+
+# Do not force trailing slashes; keep routes as /login, /register, /home
+APPEND_SLASH = False
+
+# Neo4j connection for neomodel (used by app models)
+# In production, prefer reading from environment variables
+NEO4J_BOLT_URL = 'bolt://neo4j:testpassword@localhost:7687'
