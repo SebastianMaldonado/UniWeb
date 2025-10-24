@@ -5,6 +5,7 @@ urlpatterns = [
     path("", views.root, name="root"),
     path("login", views.login_view, name="login"),
     path("register", views.register_view, name="register"),
+    path("logout", views.logout_view, name="logout"),
     path("home", views.home, name="home"),
     path("notifications", views.notifications_view, name="notifications"),
     path("profile-edit", views.profile_edit_view, name="profile_edit"),
@@ -14,6 +15,7 @@ urlpatterns = [
     path("chat", views.chat_view, name="chat"),
     path("profile", views.profile_view, name="profile"),
     path("user-profile/<str:username>", views.user_profile_view, name="user_profile"),
+    path("user/<str:username>/follow-toggle", views.follow_toggle, name="follow_toggle"),
     # Post endpoints
     path("post/<str:post_uid>/like", views.post_like_toggle, name="post_like_toggle"),
     path("post/<str:post_uid>/comments", views.post_comments_json, name="post_comments_json"),

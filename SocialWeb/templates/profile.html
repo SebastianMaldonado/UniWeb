@@ -35,6 +35,12 @@
     .close-btn { background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
     .user-row a { color: var(--black); text-decoration: none; }
     .user-row a:hover { text-decoration: underline; }
+    /* Follow section on user-profile */
+    .follow-section { display:flex; flex-direction: column; align-items:stretch; gap:6px; margin-top: 6px; width:100%; }
+    .mutual-note { color:#757575; font-size: 13px; }
+    .follow-primary, .follow-secondary { width:100%; text-align:center; }
+    .follow-primary { appearance:none; border:1px solid #1976d2; background:#1976d2; color:#fff; padding:12px 14px; border-radius:10px; font-weight:700; cursor:pointer; }
+    .follow-secondary { appearance:none; border:1px solid #ddd; background:#fff; color:#111; padding:12px 14px; border-radius:10px; font-weight:700; cursor:pointer; }
   </style>
 {% endblock %}
 
@@ -69,6 +75,16 @@
         <p class="bio" style="color:#999;">Sin descripción</p>
       {% endif %}
     </section>
+
+    <!-- Follow button for other users -->
+    {% if not is_self %}
+    <section class="follow-section">
+      {% if mutual_count and mutual_count > 0 %}
+        <div class="mutual-note">Tienen {{ mutual_count }} amigos en común</div>
+      {% endif %}
+      <button id="profileFollowBtn" class="{% if is_following %}follow-secondary{% else %}follow-primary{% endif %}" data-username="{{ username }}" data-following="{{ is_following|yesno:'true,false' }}">{% if is_following %}Dejar de seguir{% else %}Seguir{% endif %}</button>
+    </section>
+    {% endif %}
 
     <!-- 3. Followers/Following strip -->
     <section class="strip" aria-label="Seguidores y seguidos">
@@ -105,8 +121,11 @@
 {% block scripts %}
   <script>
     (function(){
-      const followers = JSON.parse('{{ followers_json|escapejs }}');
-      const following = JSON.parse('{{ following_json|escapejs }}');
+  const followers = JSON.parse('{{ followers_json|escapejs }}');
+  const following = JSON.parse('{{ following_json|escapejs }}');
+  const profileUsername = '{{ username }}';
+  let followersCount = {{ followers_count }};
+  let isFollowing = {{ is_following|yesno:'true,false' }} === 'true';
       const modal = document.getElementById('listModal');
       const modalTitle = document.getElementById('modalTitle');
       const modalBody = document.getElementById('modalBody');
@@ -131,6 +150,60 @@
       btnFollowing.addEventListener('click', () => openList('following'));
       modalClose.addEventListener('click', () => modal.classList.remove('open'));
       modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); });
+
+      // Follow toggle on user-profile
+      const followBtn = document.getElementById('profileFollowBtn');
+      if (followBtn){
+        followBtn.addEventListener('click', async function(){
+          const uname = this.getAttribute('data-username');
+          try{
+            const res = await fetch(`/user/${encodeURIComponent(uname)}/follow-toggle`, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            if(res.ok){
+              const data = await res.json();
+              const following = !!data.following;
+              this.setAttribute('data-following', following ? 'true' : 'false');
+              this.textContent = following ? 'Dejar de seguir' : 'Seguir';
+              this.className = following ? 'follow-secondary' : 'follow-primary';
+              // Update local state and followers count immediately
+              if (following && !isFollowing) { followersCount += 1; isFollowing = true; }
+              else if (!following && isFollowing) { followersCount -= 1; isFollowing = false; }
+              const btnFollowersEl = document.getElementById('btnFollowers');
+              if (btnFollowersEl) btnFollowersEl.textContent = `${followersCount} seguidores`;
+              // Update all follow buttons on page for this username
+              document.querySelectorAll(`.follow-btn[data-username="${CSS.escape(uname)}"]`).forEach(function(b){
+                b.setAttribute('data-following', following ? 'true':'false');
+                b.textContent = following ? 'Dejar de seguir' : 'Seguir';
+              });
+              // Broadcast event so other components can react
+              document.dispatchEvent(new CustomEvent('follow-changed', { detail: { username: uname, following } }));
+            }
+          } catch(e){}
+        });
+      }
+
+      // Listen to follow changes from post cards within this page
+      document.addEventListener('follow-changed', function(e){
+        const det = e.detail || {}; const uname = det.username; const following = !!det.following;
+        if (!uname) return;
+        if (uname === profileUsername) {
+          // Update main profile button
+          if (followBtn){
+            followBtn.setAttribute('data-following', following ? 'true' : 'false');
+            followBtn.textContent = following ? 'Dejar de seguir' : 'Seguir';
+            followBtn.className = following ? 'follow-secondary' : 'follow-primary';
+          }
+          // Update followers count
+          if (following && !isFollowing) { followersCount += 1; isFollowing = true; }
+          else if (!following && isFollowing) { followersCount -= 1; isFollowing = false; }
+          const btnFollowersEl = document.getElementById('btnFollowers');
+          if (btnFollowersEl) btnFollowersEl.textContent = `${followersCount} seguidores`;
+        }
+        // Update all follow buttons matching this username
+        document.querySelectorAll(`.follow-btn[data-username="${CSS.escape(uname)}"]`).forEach(function(b){
+          b.setAttribute('data-following', following ? 'true':'false');
+          b.textContent = following ? 'Dejar de seguir' : 'Seguir';
+        });
+      });
     })();
   </script>
 {% endblock %}

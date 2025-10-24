@@ -45,6 +45,15 @@ def root(request: HttpRequest) -> HttpResponse:
 	return redirect("login")
 
 
+def logout_view(request: HttpRequest) -> HttpResponse:
+	"""Log out the current user by clearing the session and redirecting to login."""
+	try:
+		request.session.flush()
+	except Exception:
+		request.session.clear()
+	return redirect("login")
+
+
 def home(request: HttpRequest) -> HttpResponse:
 	if not _get_logged_in_username(request):
 		return redirect("login")
@@ -85,7 +94,7 @@ def home(request: HttpRequest) -> HttpResponse:
 	# limit initial feed
 	feed = feed[:20]
 
-	posts_ctx = [_serialize_post_card(p) for p in feed]
+	posts_ctx = [_serialize_post_card(p, following_usernames=following_usernames, me_username=username) for p in feed]
 	return render(request, "home.html", {"posts": posts_ctx})
 
 
@@ -397,6 +406,12 @@ def profile_view(request: HttpRequest) -> HttpResponse:
 		user_posts = []
 	user_posts.sort(key=lambda p: getattr(p, 'created_at', None) or 0, reverse=True)
 
+	# Following set for serializer
+	try:
+		following_set = set(u.username for u in following)
+	except Exception:
+		following_set = set()
+
 	context = {
 		"username": user.username,
 		"bio": getattr(user, "bio", "") or "",
@@ -408,7 +423,7 @@ def profile_view(request: HttpRequest) -> HttpResponse:
 		"following": following_ctx,
 		"followers_json": json.dumps(followers_ctx),
 		"following_json": json.dumps(following_ctx),
-		"posts": [_serialize_post_card(p) for p in user_posts],
+		"posts": [_serialize_post_card(p, following_usernames=following_set, me_username=user.username) for p in user_posts],
 	}
 	return render(request, "profile.html", context)
 
@@ -423,6 +438,8 @@ def user_profile_view(request: HttpRequest, username: str) -> HttpResponse:
 	user = _get_user_by_username(username)
 	if not user:
 		return HttpResponse("Usuario no encontrado", status=404)
+	me_username = _get_logged_in_username(request)
+	me = _get_user_by_username(me_username) if me_username else None
 
 	# Prepare followers/following
 	try:
@@ -449,6 +466,20 @@ def user_profile_view(request: HttpRequest, username: str) -> HttpResponse:
 		for u in following
 	]
 
+	# Compute following state and mutual friends
+	try:
+		me_following = set(u.username for u in (list(me.following.all()) if me else []))
+	except Exception:
+		me_following = set()
+	is_self = bool(me_username == user.username)
+	is_following = (user.username in me_following) if me else False
+	# mutual friends: users both follow
+	try:
+		target_following = set(u.username for u in following)
+	except Exception:
+		target_following = set()
+	mutual_usernames = list(me_following.intersection(target_following)) if me else []
+
 	# User's posts
 	try:
 		user_posts = [p for p in Post.nodes.all() if p.author_username == user.username]
@@ -467,12 +498,15 @@ def user_profile_view(request: HttpRequest, username: str) -> HttpResponse:
 		"following": following_ctx,
 		"followers_json": json.dumps(followers_ctx),
 		"following_json": json.dumps(following_ctx),
-		"posts": [_serialize_post_card(p) for p in user_posts],
+		"posts": [_serialize_post_card(p, following_usernames=me_following, me_username=me_username) for p in user_posts],
+		"is_self": is_self,
+		"is_following": is_following,
+		"mutual_count": len(mutual_usernames),
 	}
 	return render(request, "profile.html", context)
 
 
-def _serialize_post_card(p: Post) -> dict:
+def _serialize_post_card(p: Post, following_usernames: set | None = None, me_username: str | None = None) -> dict:
 	# Load author details for avatar
 	author = _get_user_by_username(p.author_username)
 	return {
@@ -486,6 +520,8 @@ def _serialize_post_card(p: Post) -> dict:
 		"hashtags": list(p.hashtags or []),
 		"likes_count": _safe_rel_count(p, 'liked_by'),
 		"comments_count": _safe_rel_count(p, 'comments'),
+		"author_followed": bool(following_usernames and (p.author_username in following_usernames)),
+		"is_author_me": bool(me_username and (p.author_username == me_username)),
 	}
 
 
@@ -648,3 +684,27 @@ def comment_like_toggle(request: HttpRequest, comment_uid: str) -> HttpResponse:
 		comment.liked_by.connect(user)
 		liked = True
 	return HttpResponse(json.dumps({"liked": liked, "likes": _safe_rel_count(comment, 'liked_by')}), content_type="application/json")
+
+
+@csrf_exempt
+def follow_toggle(request: HttpRequest, username: str) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe:
+		return maybe
+	if request.method != 'POST':
+		return HttpResponse(status=405)
+	me = _get_user_by_username(_get_logged_in_username(request))
+	target = _get_user_by_username(username)
+	if not me or not target or me.username == target.username:
+		return HttpResponse(status=400)
+	try:
+		current = set(u.username for u in me.following.all())
+	except Exception:
+		current = set()
+	if username in current:
+		me.following.disconnect(target)
+		following = False
+	else:
+		me.following.connect(target)
+		following = True
+	return HttpResponse(json.dumps({"following": following}), content_type="application/json")

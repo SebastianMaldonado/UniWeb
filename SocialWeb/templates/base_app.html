@@ -22,11 +22,13 @@
     .icon { width: 18px; height: 18px; display: inline-block; }
     .icon svg { width: 18px; height: 18px; }
 
-    main.app-content { flex: 1; background: var(--soft); }
+  main.app-content { flex: 1; background: var(--soft); padding-bottom: 72px; }
     .content-inner { max-width: 780px; margin: 0 auto; padding: 16px; }
 
     .bottombar {
       height: 64px; border-top: 1px solid #eee; background: var(--white); display: grid; grid-template-columns: repeat(5, 1fr);
+      position: fixed; bottom: 0; left: 0; right: 0; width: 100%; z-index: 100;
+      box-shadow: 0 -4px 12px rgba(0,0,0,0.06);
     }
     .bottom-btn { display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--black); text-decoration: none; font-size: 13px; }
     .bottom-btn:hover { color: var(--red); }
@@ -44,14 +46,25 @@
         </span>
       </a>
       <div class="brand">UniWeb</div>
-      <a class="icon-btn" href="{% url 'notifications' %}" title="Notificaciones">
-        <span class="icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 8a6 6 0 10-12 0c0 7-3 7-3 7h18s-3 0-3-7"/>
-            <path d="M13.73 21a2 2 0 01-3.46 0"/>
-          </svg>
-        </span>
-      </a>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <a class="icon-btn" href="{% url 'notifications' %}" title="Notificaciones">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8a6 6 0 10-12 0c0 7-3 7-3 7h18s-3 0-3-7"/>
+              <path d="M13.73 21a2 2 0 01-3.46 0"/>
+            </svg>
+          </span>
+        </a>
+        <a class="icon-btn" href="{% url 'logout' %}" title="Cerrar sesión">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 17l5-5-5-5"/>
+              <path d="M15 12H3"/>
+              <path d="M21 19V5a2 2 0 00-2-2h-6"/>
+            </svg>
+          </span>
+        </a>
+      </div>
     </header>
 
     <main class="app-content">
@@ -105,6 +118,18 @@
     </nav>
   </div>
 
+  <script>
+    // Global sync of follow buttons across pages (home, profile, etc.)
+    document.addEventListener('follow-changed', function(e){
+      var det = e.detail || {}; var uname = det.username; var following = !!det.following;
+      if (!uname) return;
+      var esc = window.CSS && CSS.escape ? CSS.escape(uname) : uname.replace(/([.#:[\]$,>+~*^$|])/g, '\\$1');
+      document.querySelectorAll('.follow-btn[data-username="'+esc+'"]').forEach(function(b){
+        b.setAttribute('data-following', following ? 'true' : 'false');
+        b.textContent = following ? 'Dejar de seguir' : 'Seguir';
+      });
+    });
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

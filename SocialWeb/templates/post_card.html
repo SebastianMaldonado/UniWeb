@@ -84,7 +84,11 @@
       </div>
       <a href="/user-profile/{{ post.author_username }}">@{{ post.author_username }}</a>
     </div>
-    <button class="follow-btn" type="button">Seguir</button>
+    {% if not post.is_author_me %}
+      <button class="follow-btn" type="button" data-username="{{ post.author_username }}" data-following="{{ post.author_followed|yesno:'true,false' }}">
+        {{ post.author_followed|yesno:'Dejar de seguir,Seguir' }}
+      </button>
+    {% endif %}
   </div>
   {% if post.images and post.images|length > 0 %}
   <div class="post-media" data-index="0">
@@ -151,6 +155,24 @@
   const postId = root.dataset.postId;
   const media = root.querySelector('.post-media');
   const likeBtn = root.querySelector('.like-btn');
+  // Follow button
+  const followBtn = root.querySelector('.follow-btn');
+  if (followBtn){
+    followBtn.addEventListener('click', async function(){
+      const username = this.getAttribute('data-username');
+      try{
+        const res = await fetch(`/user/${encodeURIComponent(username)}/follow-toggle`, { method:'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        if(res.ok){
+          const data = await res.json();
+          const isFollowing = !!data.following;
+          this.setAttribute('data-following', isFollowing ? 'true':'false');
+          this.textContent = isFollowing ? 'Dejar de seguir' : 'Seguir';
+          // Broadcast change so other components/pages can sync
+          document.dispatchEvent(new CustomEvent('follow-changed', { detail: { username, following: isFollowing } }));
+        }
+      }catch(e){}
+    });
+  }
   const likesCountEl = root.querySelector('.likes-count');
   const commentsBtn = root.querySelector('.comments-btn');
   const commentsModal = document.getElementById('comments-{{ post.uid }}');
