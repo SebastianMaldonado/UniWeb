@@ -1,5 +1,75 @@
 {% extends 'base_app.html' %}
 {% block title %}UniWeb • Buscar{% endblock %}
 {% block content %}
-  <!-- Buscar - vacío por ahora -->
+  <style>
+    /* Estructura general: 3 secciones (barra, modos, resultados) */
+    .search-page { display:grid; grid-template-rows: auto auto 1fr; gap:12px; height: calc(100vh - 56px - 64px - 32px); }
+    .card { background:#fff; border:1px solid #eee; border-radius:12px; }
+    .search-bar { display:flex; gap:8px; padding:10px; align-items:center; }
+    .search-bar input[type="text"] { flex:1; padding:10px 12px; border:1px solid #ddd; border-radius:10px; }
+    .search-bar button { appearance:none; border:1px solid #ddd; background:#fff; padding:10px 14px; border-radius:10px; font-weight:700; cursor:pointer; }
+    .modes { display:flex; gap:8px; padding:10px; }
+    .mode-btn { flex:1; text-align:center; padding:10px 12px; border:1px solid #ddd; border-radius:10px; background:#fff; cursor:pointer; font-weight:700; }
+    .mode-btn.active { border-color:#1976d2; color:#1976d2; background:#f3f8fe; }
+    .results { overflow:auto; padding:10px; }
+  </style>
+
+  <div class="search-page">
+    <!-- 1. Barra de búsqueda -->
+    <div class="card">
+      <form id="searchForm" class="search-bar" method="get" action="{% url 'search' %}">
+        <input id="q" name="q" type="text" placeholder="Buscar..." value="{{ q|default:'' }}" />
+        <input id="mode" name="mode" type="hidden" value="{{ mode|default:'keyword' }}" />
+        <button type="submit">Buscar</button>
+      </form>
+    </div>
+
+    <!-- 2. Botones de modo (solo uno activo) -->
+    <div class="card modes">
+      {% with m=mode|default:'keyword' %}
+        <button type="button" class="mode-btn {% if m == 'hashtag' %}active{% endif %}" data-mode="hashtag">Búsqueda por hashtag</button>
+        <button type="button" class="mode-btn {% if m == 'keyword' %}active{% endif %}" data-mode="keyword">Búsqueda por palabra clave</button>
+        <button type="button" class="mode-btn {% if m == 'username' %}active{% endif %}" data-mode="username">Búsqueda por nombre de usuario</button>
+      {% endwith %}
+    </div>
+
+    <!-- 3. Resultados (scrolleable) -->
+    <div class="card results" id="results">
+      {% if posts and posts|length > 0 %}
+        {% for post in posts %}
+          {% include 'post_card.html' with post=post %}
+        {% endfor %}
+      {% else %}
+        <div style="padding:12px; color:#777;">No hay resultados</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      // Alternar modo activo
+      const modeInput = document.getElementById('mode');
+      function setActiveMode(m){
+        modeInput.value = m;
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.getAttribute('data-mode') === m));
+      }
+      document.querySelectorAll('.mode-btn').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          const newMode = this.getAttribute('data-mode');
+          setActiveMode(newMode);
+        });
+      });
+      // Enter en input dispara submit
+      const qEl = document.getElementById('q');
+      const form = document.getElementById('searchForm');
+      qEl.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ /* default submit */ } });
+      // Si escribe con '#', cambiar automáticamente a modo hashtag
+      qEl.addEventListener('input', function(){
+        const v = (this.value || '').trim();
+        if (v.startsWith('#')) {
+          setActiveMode('hashtag');
+        }
+      });
+    })();
+  </script>
 {% endblock %}

@@ -13,6 +13,7 @@ from django.core.files.base import ContentFile
 from django.utils.text import get_valid_filename
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
+from neomodel import db
 
 from .models import User, Post, Comment, Notification, Message
 
@@ -271,13 +272,217 @@ def _login_required(request: HttpRequest) -> Optional[HttpResponse]:
 def search_view(request: HttpRequest) -> HttpResponse:
 	maybe = _login_required(request)
 	if maybe: return maybe
-	return render(request, "search.html")
+	q = (request.GET.get('q', '') or '').strip()
+	mode = (request.GET.get('mode', 'keyword') or 'keyword').strip().lower()
+	if mode not in ('hashtag', 'keyword', 'username'):
+		mode = 'keyword'
+
+	me_username = _get_logged_in_username(request)
+	me = _get_user_by_username(me_username) if me_username else None
+	try:
+		me_following = set(u.username for u in (me.following.all() if me else []))
+	except Exception:
+		me_following = set()
+
+	found_posts: list[Post] = []
+	if q:
+		# Try Cypher for efficiency, fallback to Python filtering
+		try:
+			if mode == 'hashtag':
+				tag = q.lstrip('#').lower()
+				cy = (
+					"MATCH (p:Post) "
+					"WHERE ANY(h IN p.hashtags WHERE toLower(replace(h,'#','')) = toLower($tag)) "
+					"RETURN p ORDER BY coalesce(p.created_at, datetime()) DESC LIMIT 200"
+				)
+				rows, _ = db.cypher_query(cy, {"tag": tag})
+				found_posts = [Post.inflate(r[0]) for r in rows]
+			elif mode == 'username':
+				cy = (
+					"MATCH (p:Post) "
+					"WHERE toLower(p.author_username) CONTAINS toLower($name) "
+					"RETURN p ORDER BY coalesce(p.created_at, datetime()) DESC LIMIT 200"
+				)
+				rows, _ = db.cypher_query(cy, {"name": q})
+				found_posts = [Post.inflate(r[0]) for r in rows]
+			else:  # keyword
+				cy = (
+					"MATCH (p:Post) "
+					"WHERE toLower(p.title) CONTAINS toLower($kw) OR toLower(p.description) CONTAINS toLower($kw) "
+					"RETURN p ORDER BY coalesce(p.created_at, datetime()) DESC LIMIT 200"
+				)
+				rows, _ = db.cypher_query(cy, {"kw": q})
+				found_posts = [Post.inflate(r[0]) for r in rows]
+		except Exception:
+			# Fallback: load all posts and filter in Python
+			try:
+				found_posts = list(Post.nodes)
+			except Exception:
+				found_posts = []
+			qq = q.lower()
+			def matches(p: Post) -> bool:
+				if mode == 'hashtag':
+					tgt = qq.lstrip('#')
+					return any(((h or '').lower().replace('#','') == tgt) for h in (p.hashtags or []))
+				if mode == 'username':
+					return qq in (p.author_username or '').lower()
+				# keyword
+				return qq in (p.title or '').lower() or qq in (p.description or '').lower()
+			found_posts = [p for p in found_posts if matches(p)]
+
+	# Sort by created_at desc
+	try:
+		found_posts.sort(key=lambda p: getattr(p, 'created_at', None) or 0, reverse=True)
+	except Exception:
+		pass
+
+	posts_ctx = [_serialize_post_card(p, following_usernames=me_following, me_username=me_username) for p in found_posts]
+
+	return render(request, "search.html", {
+		"q": q,
+		"mode": mode,
+		"posts": posts_ctx,
+	})
 
 
 def friends_view(request: HttpRequest) -> HttpResponse:
 	maybe = _login_required(request)
 	if maybe: return maybe
-	return render(request, "friends.html")
+	me_username = _get_logged_in_username(request)
+	me = _get_user_by_username(me_username) if me_username else None
+	# Get my following and followers
+	try:
+		my_following_users = list(me.following.all()) if me else []
+	except Exception:
+		my_following_users = []
+	try:
+		my_followers_users = list(me.followers.all()) if me else []
+	except Exception:
+		my_followers_users = []
+	my_following = {u.username for u in my_following_users}
+	my_followers = {u.username for u in my_followers_users}
+
+	following_ctx = [{
+		"username": u.username,
+		"profile_image_url": getattr(u, "profile_image_url", "") or "",
+	} for u in my_following_users]
+	followers_ctx = [{
+		"username": u.username,
+		"profile_image_url": getattr(u, "profile_image_url", "") or "",
+	} for u in my_followers_users]
+
+	# Load all users for recommendations and popularity
+	try:
+		all_users = list(User.nodes)
+	except Exception:
+		all_users = []
+
+	# Mutual friends (reciprocal follows)
+	mutual_usernames = my_following & my_followers
+	user_by_name = {u.username: u for u in all_users}
+	mutuals_ctx = []
+	for uname in sorted(mutual_usernames):
+		u = user_by_name.get(uname)
+		mutuals_ctx.append({
+			"username": uname,
+			"profile_image_url": getattr(u, "profile_image_url", "") if u else "",
+		})
+
+	# Build quick maps for followers/following sets
+	followers_map: dict[str, set[str]] = {}
+	following_map: dict[str, set[str]] = {}
+	for u in all_users:
+		uname = u.username
+		try:
+			followers_map[uname] = {x.username for x in u.followers.all()}
+		except Exception:
+			followers_map[uname] = set()
+		try:
+			following_map[uname] = {x.username for x in u.following.all()}
+		except Exception:
+			following_map[uname] = set()
+
+	# Build liked hashtag profile for current user
+	liked_tags: set[str] = set()
+	if me_username:
+		try:
+			cy = (
+				"MATCH (:User {username: $me})-[:LIKED_POST]->(p:Post) "
+				"WITH p UNWIND coalesce(p.hashtags, []) AS h "
+				"RETURN collect(DISTINCT toLower(replace(h,'#',''))) AS tags"
+			)
+			rows, _ = db.cypher_query(cy, {"me": me_username})
+			if rows and rows[0] and rows[0][0]:
+				liked_tags = set(rows[0][0])
+		except Exception:
+			liked_tags = set()
+
+	# Recommendations: users you don't follow yet, ordered by (mutuals, interest, popularity)
+	recommended_list = []
+	for u in all_users:
+		if not me or u.username == me_username or u.username in my_following:
+			continue
+		# 1) mutual friends in common
+		mut = (my_following & followers_map.get(u.username, set())) | (my_following & following_map.get(u.username, set()))
+		mutual_count = len(mut)
+		# 2) interest overlap based on liked hashtags
+		interest_score = 0
+		if liked_tags:
+			try:
+				ups = list(Post.nodes.filter(author_username=u.username))
+			except Exception:
+				ups = []
+			for p in ups:
+				tags = [(h or '').lower().replace('#','') for h in (p.hashtags or [])]
+				if any(t in liked_tags for t in tags):
+					interest_score += 1
+		# 3) popularity by followers count
+		followers_count = len(followers_map.get(u.username, set()))
+		if mutual_count > 0 or interest_score > 0 or followers_count > 0:
+			recommended_list.append({
+				"username": u.username,
+				"profile_image_url": getattr(u, "profile_image_url", "") or "",
+				"mutual_count": mutual_count,
+				"interest_score": interest_score,
+				"followers_count": followers_count,
+				"is_following": (u.username in my_following),
+			})
+	recommended_list.sort(key=lambda d: (d.get("mutual_count",0), d.get("interest_score",0), d.get("followers_count",0)), reverse=True)
+
+	# Popular users: sort by followers count desc (exclude me)
+	popular_list = []
+	for u in all_users:
+		if me and u.username == me_username:
+			continue
+		fcnt = len(followers_map.get(u.username, set()))
+		popular_list.append({
+			"username": u.username,
+			"profile_image_url": getattr(u, "profile_image_url", "") or "",
+			"followers_count": fcnt,
+			"is_following": (u.username in my_following),
+		})
+	popular_list.sort(key=lambda d: d.get("followers_count", 0), reverse=True)
+
+	# Graph data: nodes and edges for all users and their follows
+	nodes = [{
+		"id": u.username,
+		"avatar": getattr(u, "profile_image_url", "") or "",
+	} for u in all_users]
+	links = []
+	for u in all_users:
+		src = u.username
+		for tgt in following_map.get(src, set()):
+			links.append({"source": src, "target": tgt})
+
+	return render(request, "friends.html", {
+		"following": following_ctx,
+		"followers": followers_ctx,
+		"mutuals": mutuals_ctx,
+		"recommended": recommended_list,
+		"popular": popular_list,
+		"graph_nodes": json.dumps(nodes),
+		"graph_links": json.dumps(links),
+	})
 
 
 def new_post_view(request: HttpRequest) -> HttpResponse:

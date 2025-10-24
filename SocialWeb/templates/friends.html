@@ -1,5 +1,223 @@
 {% extends 'base_app.html' %}
 {% block title %}UniWeb • Amigos{% endblock %}
 {% block content %}
-  <!-- Amigos - vacío por ahora -->
+  <style>
+    .friends-page { display:grid; grid-template-rows: auto 1fr; gap:12px; height: calc(100vh - 56px - 64px - 32px); }
+    .card { background:#fff; border:1px solid #eee; border-radius:12px; }
+    .tabs { display:flex; gap:8px; padding:10px; }
+    .tab-btn { flex:1; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 12px; border:1px solid #ddd; border-radius:10px; background:#fff; cursor:pointer; font-weight:700; }
+    .tab-btn.active { border-color:#1976d2; color:#1976d2; background:#f3f8fe; }
+    .icon { width:18px; height:18px; display:inline-block; }
+    .icon svg { width:18px; height:18px; }
+    .panel { height: 100%; overflow:auto; }
+    .section { padding:10px; }
+    .list { display:grid; gap:8px; }
+    .user-row { display:grid; grid-template-columns: 44px 1fr auto; gap:10px; align-items:center; padding:8px 10px; border:1px solid #eee; border-radius:10px; }
+    .uimg { width:44px; height:44px; border-radius:999px; overflow:hidden; border:1px solid #eee; background:#f5f5f5; }
+    .uimg img { width:100%; height:100%; object-fit:cover; display:block; }
+    .muted { color:#777; font-size:12px; }
+    .col { display:grid; gap:10px; }
+    .cols { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    .follow-btn { appearance:none; border:1px solid #ddd; background:#fff; padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600; }
+    .graph-wrap { padding:10px; }
+    .graph-scroll { overflow:auto; }
+  </style>
+
+  <div class="friends-page">
+    <!-- Top tabs -->
+    <div class="card tabs">
+      <button class="tab-btn active" data-tab="friends">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+        </span>
+        Ver amigos
+      </button>
+      <button class="tab-btn" data-tab="reco">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15l-5-5L5 21"/><path d="M14 3l7 7"/></svg>
+        </span>
+        Recomendaciones
+      </button>
+      <button class="tab-btn" data-tab="popular">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 13l3 3 7-7"/></svg>
+        </span>
+        Más populares
+      </button>
+      <button class="tab-btn" data-tab="network">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9c0 .69.28 1.32.73 1.77.45.45 1.08.73 1.77.73H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        </span>
+        Redes de conexión
+      </button>
+      <button class="tab-btn" data-tab="communities">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20l9-5-9-5-9 5 9 5z"/><path d="M12 12l9-5-9-5-9 5 9 5z"/></svg>
+        </span>
+        Comunidades
+      </button>
+    </div>
+
+    <!-- Bottom panel -->
+    <div class="card panel">
+      <!-- Ver amigos (solo mutuos) -->
+      <div class="section" data-section="friends">
+        <div class="list">
+          {% if mutuals and mutuals|length > 0 %}
+            {% for u in mutuals %}
+              <div class="user-row">
+                <div class="uimg">
+                  {% if u.profile_image_url %}
+                    <img src="{{ u.profile_image_url }}" alt="{{ u.username }}" />
+                  {% else %}
+                    <img alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='44' height='44'><rect fill='%23eeeeee' width='100%' height='100%'/></svg>" />
+                  {% endif %}
+                </div>
+                <div>
+                  <a href="/user-profile/{{ u.username }}">@{{ u.username }}</a>
+                </div>
+                <div></div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="muted">Aún no tienes amigos mutuos</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Recomendaciones -->
+      <div class="section" data-section="reco" style="display:none;">
+        <div class="list">
+          {% if recommended and recommended|length > 0 %}
+            {% for u in recommended %}
+              <div class="user-row">
+                <div class="uimg">
+                  {% if u.profile_image_url %}
+                    <img src="{{ u.profile_image_url }}" alt="{{ u.username }}" />
+                  {% else %}
+                    <img alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='44' height='44'><rect fill='%23eeeeee' width='100%' height='100%'/></svg>" />
+                  {% endif %}
+                </div>
+                <div>
+                  <a href="/user-profile/{{ u.username }}">@{{ u.username }}</a>
+                  <div class="muted">{{ u.mutual_count }} amigos en común</div>
+                </div>
+                <div>
+                  <button class="follow-btn" data-username="{{ u.username }}" data-following="{{ u.is_following|yesno:'true,false' }}">{{ u.is_following|yesno:'Dejar de seguir,Seguir' }}</button>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="muted">Aún no hay recomendaciones</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Más populares -->
+      <div class="section" data-section="popular" style="display:none;">
+        <div class="list">
+          {% if popular and popular|length > 0 %}
+            {% for u in popular %}
+              <div class="user-row">
+                <div class="uimg">
+                  {% if u.profile_image_url %}
+                    <img src="{{ u.profile_image_url }}" alt="{{ u.username }}" />
+                  {% else %}
+                    <img alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='44' height='44'><rect fill='%23eeeeee' width='100%' height='100%'/></svg>" />
+                  {% endif %}
+                </div>
+                <div>
+                  <a href="/user-profile/{{ u.username }}">@{{ u.username }}</a>
+                  <div class="muted">{{ u.followers_count }} seguidores</div>
+                </div>
+                <div>
+                  <button class="follow-btn" data-username="{{ u.username }}" data-following="{{ u.is_following|yesno:'true,false' }}">{{ u.is_following|yesno:'Dejar de seguir,Seguir' }}</button>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="muted">No hay usuarios populares para mostrar</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Redes de conexión -->
+      <div class="section" data-section="network" style="display:none;">
+        <div class="graph-wrap">
+          <div class="graph-scroll">
+            <svg id="graphSvg" width="1000" height="700" style="border:1px solid #eee; border-radius:12px; background:#fff;"></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Comunidades -->
+      <div class="section" data-section="communities" style="display:none;">
+        <div class="muted">Se implementará después</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      // Tab switching
+      const tabs = document.querySelectorAll('.tab-btn');
+      const sections = document.querySelectorAll('[data-section]');
+      function show(tab){
+        tabs.forEach(b => b.classList.toggle('active', b.getAttribute('data-tab') === tab));
+        sections.forEach(s => s.style.display = (s.getAttribute('data-section') === tab ? '' : 'none'));
+      }
+      tabs.forEach(b => b.addEventListener('click', () => show(b.getAttribute('data-tab'))));
+
+      // Simple circular layout graph render
+      const nodes = {{ graph_nodes|safe }};
+      const links = {{ graph_links|safe }};
+      const svg = document.getElementById('graphSvg');
+      if (svg && nodes && nodes.length){
+        const w = svg.viewBox.baseVal && svg.viewBox.baseVal.width ? svg.viewBox.baseVal.width : svg.getAttribute('width');
+        const h = svg.viewBox.baseVal && svg.viewBox.baseVal.height ? svg.viewBox.baseVal.height : svg.getAttribute('height');
+        const width = parseInt(w || 1000, 10);
+        const height = parseInt(h || 700, 10);
+        const cx = width/2, cy = height/2;
+        const R = Math.min(width, height) * 0.38;
+        const angle = (2*Math.PI) / nodes.length;
+        const pos = {};
+        nodes.forEach((n, i) => {
+          const a = i * angle;
+          pos[n.id] = { x: cx + R*Math.cos(a), y: cy + R*Math.sin(a) };
+        });
+        function el(tag, attrs){
+          const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+          Object.keys(attrs||{}).forEach(k => e.setAttribute(k, attrs[k]));
+          return e;
+        }
+        // Arrows
+        const defs = el('defs');
+        const marker = el('marker', { id:'arrow', markerWidth:6, markerHeight:6, refX:6, refY:3, orient:'auto', markerUnits:'strokeWidth' });
+        marker.appendChild(el('path', { d:'M0,0 L0,6 L6,3 z', fill:'#bbb' }));
+        defs.appendChild(marker); svg.appendChild(defs);
+        // Draw links
+        links.forEach(L => {
+          const s = pos[L.source], t = pos[L.target];
+          if (!s || !t) return;
+          svg.appendChild(el('line', { x1:s.x, y1:s.y, x2:t.x, y2:t.y, stroke:'#ddd', 'stroke-width':1.2, 'marker-end':'url(#arrow)' }));
+        });
+        // Draw nodes
+        nodes.forEach(n => {
+          const p = pos[n.id];
+          const g = el('g', {});
+          const circle = el('circle', { cx:p.x, cy:p.y, r:16, fill:'#fff', stroke:'#ccc' });
+          g.appendChild(circle);
+          // avatar as image if available
+          if (n.avatar){
+            const img = el('image', { href:n.avatar, x:p.x-14, y:p.y-14, width:28, height:28, clipPath:'circle(14px at 14px 14px)' });
+            g.appendChild(img);
+          }
+          const label = el('text', { x:p.x, y:p.y+30, 'text-anchor':'middle', fill:'#666', 'font-size':'10' });
+          label.textContent = '@' + n.id;
+          g.appendChild(label);
+          svg.appendChild(g);
+        });
+      }
+    })();
+  </script>
 {% endblock %}
