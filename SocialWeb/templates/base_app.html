@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}UniWeb{% endblock %}</title>
+  {% block head_extra %}{% endblock %}
+  <style>
+    :root { --red: #d32f2f; --red-dark: #b71c1c; --black: #111; --white: #fff; --soft:#f7f7f7; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; background: var(--white); color: var(--black); font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; }
+
+    .page { min-height: 100vh; display: flex; flex-direction: column; }
+    .topbar {
+      height: 56px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 16px; border-bottom: 1px solid #eee; position: sticky; top: 0; background: var(--white); z-index: 10;
+    }
+    .brand { font-weight: 800; letter-spacing: 0.5px; }
+    .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; border: 1px solid #eee; background: var(--white); cursor: pointer; text-decoration: none; color: var(--black); }
+    .icon-btn:hover { border-color: var(--red); }
+    .icon { width: 18px; height: 18px; display: inline-block; }
+    .icon svg { width: 18px; height: 18px; }
+
+    main.app-content { flex: 1; background: var(--soft); }
+    .content-inner { max-width: 780px; margin: 0 auto; padding: 16px; }
+
+    .bottombar {
+      height: 64px; border-top: 1px solid #eee; background: var(--white); display: grid; grid-template-columns: repeat(5, 1fr);
+    }
+    .bottom-btn { display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--black); text-decoration: none; font-size: 13px; }
+    .bottom-btn:hover { color: var(--red); }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <a class="icon-btn" href="{% url 'home' %}" title="Inicio">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 10.5L12 3l9 7.5"/>
+            <path d="M5 10v10h14V10"/>
+          </svg>
+        </span>
+      </a>
+      <div class="brand">UniWeb</div>
+      <a class="icon-btn" href="{% url 'notifications' %}" title="Notificaciones">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8a6 6 0 10-12 0c0 7-3 7-3 7h18s-3 0-3-7"/>
+            <path d="M13.73 21a2 2 0 01-3.46 0"/>
+          </svg>
+        </span>
+      </a>
+    </header>
+
+    <main class="app-content">
+      <div class="content-inner">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+
+    <nav class="bottombar">
+      <a class="bottom-btn" href="{% url 'search' %}" title="Buscar">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/>
+          </svg>
+        </span>
+        <span>Buscar</span>
+      </a>
+      <a class="bottom-btn" href="{% url 'friends' %}" title="Amigos">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+          </svg>
+        </span>
+        <span>Amigos</span>
+      </a>
+      <a class="bottom-btn" href="{% url 'new_post' %}" title="Publicar">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><path d="M12 8v8"/><path d="M8 12h8"/>
+          </svg>
+        </span>
+        <span>Publicar</span>
+      </a>
+      <a class="bottom-btn" href="{% url 'chat' %}" title="Mensajes">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a4 4 0 01-4 4H7l-4 4V7a4 4 0 014-4h10a4 4 0 014 4z"/>
+          </svg>
+        </span>
+        <span>Mensajes</span>
+      </a>
+      <a class="bottom-btn" href="{% url 'profile' %}" title="Mi perfil">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="7" r="4"/><path d="M5.5 21a6.5 6.5 0 0113 0"/>
+          </svg>
+        </span>
+        <span>Mi perfil</span>
+      </a>
+    </nav>
+  </div>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

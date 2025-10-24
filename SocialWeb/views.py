@@ -1,5 +1,6 @@
 import re
 from typing import Optional
+import json
 from base64 import b64decode
 
 from django.http import HttpRequest, HttpResponse
@@ -11,8 +12,9 @@ from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from django.utils.text import get_valid_filename
 from django.conf import settings
+from django.views.decorators.csrf import csrf_exempt
 
-from .models import User
+from .models import User, Post, Comment
 
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
@@ -46,7 +48,45 @@ def root(request: HttpRequest) -> HttpResponse:
 def home(request: HttpRequest) -> HttpResponse:
 	if not _get_logged_in_username(request):
 		return redirect("login")
-	return render(request, "home.html")
+	# Build feed: followed users' posts -> interest-matching -> latest
+	username = _get_logged_in_username(request)
+	user = _get_user_by_username(username)
+	if not user:
+		return redirect("login")
+
+	# Collect all posts (simple approach) sorted by created_at desc
+	try:
+		all_posts = list(Post.nodes.all())
+	except Exception:
+		all_posts = []
+	all_posts.sort(key=lambda p: getattr(p, 'created_at', None) or 0, reverse=True)
+
+	# Following usernames
+	try:
+		following_users = list(user.following.all())
+	except Exception:
+		following_users = []
+	following_usernames = {u.username for u in following_users}
+
+	# Interests: hashtags used by this user's own posts
+	my_posts = [p for p in all_posts if p.author_username == username]
+	my_interests = set()
+	for p in my_posts:
+		for tag in (p.hashtags or []):
+			my_interests.add(tag.lower())
+
+	feed_following = [p for p in all_posts if p.author_username in following_usernames]
+	picked = set(id(p) for p in feed_following)
+	feed_interests = [p for p in all_posts if id(p) not in picked and any((tag.lower() in my_interests) for tag in (p.hashtags or []))]
+	picked.update(id(p) for p in feed_interests)
+	feed_latest = [p for p in all_posts if id(p) not in picked]
+
+	feed = feed_following + feed_interests + feed_latest
+	# limit initial feed
+	feed = feed[:20]
+
+	posts_ctx = [_serialize_post_card(p) for p in feed]
+	return render(request, "home.html", {"posts": posts_ctx})
 
 
 def login_view(request: HttpRequest) -> HttpResponse:
@@ -209,3 +249,402 @@ def profile_edit_view(request: HttpRequest) -> HttpResponse:
 		"error": error,
 	}
 	return render(request, "profile_edit.html", context)
+
+
+def _login_required(request: HttpRequest) -> Optional[HttpResponse]:
+	if not _get_logged_in_username(request):
+		return redirect("login")
+	return None
+
+
+def search_view(request: HttpRequest) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe: return maybe
+	return render(request, "search.html")
+
+
+def friends_view(request: HttpRequest) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe: return maybe
+	return render(request, "friends.html")
+
+
+def new_post_view(request: HttpRequest) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe: return maybe
+	me = _get_user_by_username(_get_logged_in_username(request))
+	if not me:
+		return redirect("login")
+
+	error = None
+	ok = False
+
+	if request.method == "POST":
+		title = (request.POST.get("title", "") or "").strip()
+		description = (request.POST.get("description", "") or "").strip()
+		# clamp description
+		if len(description) > 500:
+			description = description[:500]
+
+		# arrays
+		links = request.POST.getlist("links[]") or []
+		hashtags = request.POST.getlist("hashtags[]") or []
+		images_b64 = request.POST.getlist("images[]") or []
+
+		# basic validation
+		if not title:
+			error = "El título es obligatorio."
+		elif not hashtags:
+			error = "Agrega al menos un tema (#hashtag)."
+
+		def _save_data_url(data_url: str, base_folder: str, name: str) -> Optional[str]:
+			m = re.match(r"^data:image/(png|jpeg);base64,(.+)$", data_url)
+			if not m:
+				return None
+			ext = 'png' if m.group(1) == 'png' else 'jpg'
+			b64data = m.group(2)
+			content = ContentFile(b64decode(b64data))
+			path = default_storage.save(f"{base_folder}/{name}.{ext}", content)
+			url = default_storage.url(path)
+			# ensure MEDIA_URL when storage returns relative
+			return settings.MEDIA_URL + path if not url.startswith('http') else url
+
+		if not error:
+			# Persist images
+			from datetime import datetime
+			base_folder = f"users/{me.username}/posts/{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
+			image_urls = []
+			for idx, img in enumerate(images_b64):
+				saved = _save_data_url(img, base_folder, f"img_{idx}")
+				if saved:
+					image_urls.append(saved)
+
+			# Normalize hashtags to lower without leading '#'
+			norm_tags = []
+			for t in hashtags:
+				t = (t or '').strip()
+				if not t:
+					continue
+				if t.startswith('#'):
+					t = t[1:]
+				if t:
+					norm_tags.append(t.lower())
+
+			post = Post(
+				title=title,
+				description=description or None,
+				images=image_urls,
+				links=[(l or '').strip() for l in links if (l or '').strip()],
+				hashtags=norm_tags,
+				author_username=me.username,
+				author_uid=me.uid,
+			).save()
+			# Connect author relationship
+			try:
+				post.author.connect(me)
+			except Exception:
+				pass
+			ok = True
+			return redirect("home")
+
+	return render(request, "new_post.html", {"error": error, "ok": ok})
+
+
+def chat_view(request: HttpRequest) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe: return maybe
+	return render(request, "chat.html")
+
+
+def profile_view(request: HttpRequest) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe: return maybe
+	# Load current user profile
+	username = _get_logged_in_username(request)
+	user = _get_user_by_username(username) if username else None
+	if not user:
+		return redirect("login")
+
+	# Prepare followers/following lists and counts
+	try:
+		followers = list(user.followers.all())
+	except Exception:
+		followers = []
+	try:
+		following = list(user.following.all())
+	except Exception:
+		following = []
+
+	followers_ctx = [
+		{
+			"username": u.username,
+			"profile_image_url": getattr(u, "profile_image_url", "") or "",
+		}
+		for u in followers
+	]
+	following_ctx = [
+		{
+			"username": u.username,
+			"profile_image_url": getattr(u, "profile_image_url", "") or "",
+		}
+		for u in following
+	]
+
+	# User's own posts
+	try:
+		user_posts = [p for p in Post.nodes.all() if p.author_username == user.username]
+	except Exception:
+		user_posts = []
+	user_posts.sort(key=lambda p: getattr(p, 'created_at', None) or 0, reverse=True)
+
+	context = {
+		"username": user.username,
+		"bio": getattr(user, "bio", "") or "",
+		"profile_image_url": getattr(user, "profile_image_url", "") or "",
+		"cover_image_url": getattr(user, "cover_image_url", "") or "",
+		"followers_count": len(followers_ctx),
+		"following_count": len(following_ctx),
+		"followers": followers_ctx,
+		"following": following_ctx,
+		"followers_json": json.dumps(followers_ctx),
+		"following_json": json.dumps(following_ctx),
+		"posts": [_serialize_post_card(p) for p in user_posts],
+	}
+	return render(request, "profile.html", context)
+
+
+def user_profile_view(request: HttpRequest, username: str) -> HttpResponse:
+	"""Public profile page for any user by username."""
+	maybe = _login_required(request)
+	if maybe:
+		return maybe
+
+	# Load target user
+	user = _get_user_by_username(username)
+	if not user:
+		return HttpResponse("Usuario no encontrado", status=404)
+
+	# Prepare followers/following
+	try:
+		followers = list(user.followers.all())
+	except Exception:
+		followers = []
+	try:
+		following = list(user.following.all())
+	except Exception:
+		following = []
+
+	followers_ctx = [
+		{
+			"username": u.username,
+			"profile_image_url": getattr(u, "profile_image_url", "") or "",
+		}
+		for u in followers
+	]
+	following_ctx = [
+		{
+			"username": u.username,
+			"profile_image_url": getattr(u, "profile_image_url", "") or "",
+		}
+		for u in following
+	]
+
+	# User's posts
+	try:
+		user_posts = [p for p in Post.nodes.all() if p.author_username == user.username]
+	except Exception:
+		user_posts = []
+	user_posts.sort(key=lambda p: getattr(p, 'created_at', None) or 0, reverse=True)
+
+	context = {
+		"username": user.username,
+		"bio": getattr(user, "bio", "") or "",
+		"profile_image_url": getattr(user, "profile_image_url", "") or "",
+		"cover_image_url": getattr(user, "cover_image_url", "") or "",
+		"followers_count": len(followers_ctx),
+		"following_count": len(following_ctx),
+		"followers": followers_ctx,
+		"following": following_ctx,
+		"followers_json": json.dumps(followers_ctx),
+		"following_json": json.dumps(following_ctx),
+		"posts": [_serialize_post_card(p) for p in user_posts],
+	}
+	return render(request, "profile.html", context)
+
+
+def _serialize_post_card(p: Post) -> dict:
+	# Load author details for avatar
+	author = _get_user_by_username(p.author_username)
+	return {
+		"uid": p.uid,
+		"title": p.title,
+		"author_username": p.author_username,
+		"author_avatar": getattr(author, "profile_image_url", "") or "",
+		"images": list(p.images or []),
+		"description": p.description or "",
+		"links": list(p.links or []),
+		"hashtags": list(p.hashtags or []),
+		"likes_count": _safe_rel_count(p, 'liked_by'),
+		"comments_count": _safe_rel_count(p, 'comments'),
+	}
+
+
+def _safe_rel_count(obj, rel_name: str) -> int:
+	try:
+		rel = getattr(obj, rel_name)
+		return len(list(rel.all()))
+	except Exception:
+		return 0
+
+
+@csrf_exempt
+def post_like_toggle(request: HttpRequest, post_uid: str) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe:
+		return maybe
+	if request.method != "POST":
+		return HttpResponse(status=405)
+	user = _get_user_by_username(_get_logged_in_username(request))
+	if not user:
+		return HttpResponse(status=403)
+	try:
+		post = Post.nodes.get(uid=post_uid)
+	except Post.DoesNotExist:
+		return HttpResponse(status=404)
+
+	# Toggle like
+	try:
+		liked_users = list(post.liked_by.all())
+	except Exception:
+		liked_users = []
+	if any(u.username == user.username for u in liked_users):
+		# unlike: neomodel relationship managers support disconnect
+		post.liked_by.disconnect(user)
+		liked = False
+	else:
+		post.liked_by.connect(user)
+		liked = True
+	return HttpResponse(json.dumps({"liked": liked, "likes": _safe_rel_count(post, 'liked_by')}), content_type="application/json")
+
+
+def post_comments_json(request: HttpRequest, post_uid: str) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe:
+		return maybe
+	try:
+		post = Post.nodes.get(uid=post_uid)
+	except Post.DoesNotExist:
+		return HttpResponse(status=404)
+
+	# Build nested comments tree
+	def serialize_comment(c: Comment) -> dict:
+		try:
+			replies = list(c.replies.all())
+		except Exception:
+			replies = []
+		# enrich with avatar and timestamp
+		try:
+			user = _get_user_by_username(c.author_username)
+			avatar = user.profile_image_url if user and getattr(user, 'profile_image_url', None) else ''
+		except Exception:
+			avatar = ''
+		return {
+			"uid": c.uid,
+			"author_username": c.author_username,
+			"text": c.text,
+			"likes": _safe_rel_count(c, 'liked_by'),
+			"author_avatar": avatar,
+			"created_at": (c.created_at.isoformat() if getattr(c, 'created_at', None) else ''),
+			"replies": [serialize_comment(rc) for rc in replies],
+		}
+
+	comments = []
+	try:
+		top = list(post.comments.all())
+	except Exception:
+		top = []
+	for c in top:
+		comments.append(serialize_comment(c))
+	return HttpResponse(json.dumps({"comments": comments}), content_type="application/json")
+
+
+@csrf_exempt
+def post_add_comment(request: HttpRequest, post_uid: str) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe:
+		return maybe
+	if request.method != "POST":
+		return HttpResponse(status=405)
+	try:
+		post = Post.nodes.get(uid=post_uid)
+	except Post.DoesNotExist:
+		return HttpResponse(status=404)
+	me = _get_user_by_username(_get_logged_in_username(request))
+	if not me:
+		return HttpResponse(status=403)
+	text = (request.POST.get('text', '') or '').strip()
+	if not text:
+		return HttpResponse(json.dumps({"error": "Texto requerido"}), content_type="application/json", status=400)
+	if len(text) > 500:
+		text = text[:500]
+	c = Comment(text=text, author_username=me.username, author_uid=me.uid).save()
+	post.comments.connect(c)
+	return HttpResponse(json.dumps({"ok": True}), content_type="application/json")
+
+
+@csrf_exempt
+def post_add_reply(request: HttpRequest, post_uid: str, comment_uid: str) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe:
+		return maybe
+	if request.method != "POST":
+		return HttpResponse(status=405)
+	# Ensure post exists (optional integrity)
+	try:
+		_ = Post.nodes.get(uid=post_uid)
+	except Post.DoesNotExist:
+		return HttpResponse(status=404)
+	# Find parent comment
+	try:
+		parent = Comment.nodes.get(uid=comment_uid)
+	except Comment.DoesNotExist:
+		return HttpResponse(status=404)
+	me = _get_user_by_username(_get_logged_in_username(request))
+	if not me:
+		return HttpResponse(status=403)
+	text = (request.POST.get('text', '') or '').strip()
+	if not text:
+		return HttpResponse(json.dumps({"error": "Texto requerido"}), content_type="application/json", status=400)
+	if len(text) > 500:
+		text = text[:500]
+	rep = Comment(text=text, author_username=me.username, author_uid=me.uid).save()
+	parent.replies.connect(rep)
+	return HttpResponse(json.dumps({"ok": True}), content_type="application/json")
+
+
+@csrf_exempt
+def comment_like_toggle(request: HttpRequest, comment_uid: str) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe:
+		return maybe
+	if request.method != 'POST':
+		return HttpResponse(status=405)
+	try:
+		comment = Comment.nodes.get(uid=comment_uid)
+	except Comment.DoesNotExist:
+		return HttpResponse(status=404)
+	user = _get_user_by_username(_get_logged_in_username(request))
+	if not user:
+		return HttpResponse(status=403)
+	# toggle like
+	try:
+		liked_users = list(comment.liked_by.all())
+	except Exception:
+		liked_users = []
+	if any(u.username == user.username for u in liked_users):
+		comment.liked_by.disconnect(user)
+		liked = False
+	else:
+		comment.liked_by.connect(user)
+		liked = True
+	return HttpResponse(json.dumps({"liked": liked, "likes": _safe_rel_count(comment, 'liked_by')}), content_type="application/json")

@@ -1,0 +1,330 @@
+{% comment %} Partial template to render a single post card. Requires a `post` dict context. {% endcomment %}
+<style>
+  .post-card { background: #fff; border: 1px solid #e6e6e6; border-radius: 14px; box-shadow: 0 10px 28px rgba(0,0,0,0.08); overflow: hidden; margin: 0 auto 16px; width: 62.5%; }
+  .post-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; }
+  .post-user { display: flex; align-items: center; gap: 10px; }
+  .post-user .avatar { width: 36px; height: 36px; border-radius: 999px; overflow: hidden; background: #f2f2f2; border: 1px solid #e6e6e6; }
+  .post-user .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .post-user a { color: #111; text-decoration: none; font-weight: 700; }
+  .post-user a:hover { text-decoration: underline; }
+  .follow-btn { appearance: none; border: 1px solid #ddd; background: #fff; padding: 6px 10px; border-radius: 10px; cursor: pointer; font-weight: 600; }
+
+  .post-title { padding: 0 14px; font-size: 16px; font-weight: 700; margin: 0; }
+  /* Add spacing only when title follows an image */
+  .post-media + .post-title { margin-top: 8px; }
+
+  .post-media { position: relative; aspect-ratio: 1 / 1; width: 100%; margin: 0; }
+  .post-media img { position:absolute; inset:0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* Overlay navigation buttons */
+  .post-media .nav-btn { position:absolute; top:50%; transform: translateY(-50%); width:28px; height:28px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,0.5); color:#fff; cursor:pointer; opacity:0; transition: opacity 120ms ease; }
+  .post-media .nav-prev { left:8px; }
+  .post-media .nav-next { right:8px; }
+  .post-media:hover .nav-btn { opacity: 1; }
+  .post-media .media-counter { position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.6); color: #fff; padding: 2px 6px; border-radius: 8px; font-size: 11px; line-height: 1; }
+
+  .post-body { padding: 10px 14px; }
+  .accordion { display: grid; gap: 8px; }
+  .accordion-content { overflow: hidden; max-height: 3.2em; transition: max-height 220ms ease; }
+  .accordion.open .accordion-content { max-height: 1000px; }
+  .post-text { white-space: pre-wrap; line-height: 1.6; }
+  .show-more { margin-top: 4px; appearance: none; border: none; background: transparent; color: #d32f2f; font-weight: 700; cursor: pointer; text-align:left; padding:0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { display: inline-block; padding: 6px 10px; border-radius: 999px; background: #fafafa; border: 1px solid #eee; font-size: 12px; }
+  .links { display: grid; gap: 4px; margin-top: 8px; }
+  .links a { color: #0d47a1; text-decoration: none; }
+  .links a:hover { text-decoration: underline; }
+
+  .post-footer { padding: 10px 14px; display: flex; align-items: center; gap: 16px; border-top: 1px solid #f0f0f0; }
+  .like-btn { appearance: none; border: 1px solid #ddd; background: #fff; padding: 6px 10px; border-radius: 10px; cursor: pointer; display:flex; align-items:center; gap:8px; }
+  .comments-btn { appearance: none; border: 1px solid #ddd; background: #fff; padding: 6px 10px; border-radius: 10px; cursor: pointer; display:flex; align-items:center; gap:8px; }
+
+  /* Comments modal */
+  .comments-modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.6); z-index: 2000; }
+  .comments-modal.open { display: flex; }
+  .comments-card { width: min(92vw, 760px); max-height: 88vh; background: #fff; border-radius: 12px; overflow: hidden; display: grid; grid-template-rows: auto 1fr auto; }
+  .comments-header { padding: 10px 14px; font-weight: 700; border-bottom: 1px solid #eee; display:flex; align-items:center; justify-content:space-between; }
+  .comments-body { padding: 10px 14px; overflow: auto; }
+  /* Comment cards */
+  .comment-card { border:1px solid #eee; border-radius:10px; padding:10px; background:#fff; }
+  .comment-card + .comment-card { margin-top:8px; }
+  .comment-header { display:flex; align-items:center; gap:8px; }
+  .comment-header .ch-avatar { width: 24px; height: 24px; border-radius: 999px; overflow: hidden; background:#f2f2f2; border:1px solid #eee; flex: 0 0 auto; }
+  .comment-header .ch-avatar img { width:100%; height:100%; object-fit: cover; display:block; }
+  .comment-header .ch-meta { font-size: 13px; }
+  .comment-header .ch-meta a { font-weight:700; color:#111; text-decoration:none; }
+  .comment-header .ch-meta a:hover { text-decoration: underline; }
+  .comment-header .ch-time { color:#757575; margin-left:6px; font-weight:400; }
+  .comment-content { margin-top:6px; }
+  .comment-text { white-space: pre-wrap; }
+  .comment-text.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .comment-show-more { color:#d32f2f; cursor:pointer; user-select:none; background:transparent; border:none; padding:0; font-size:12px; }
+  .comment-actions { display:flex; gap:8px; margin-top:6px; }
+  .comment-actions button { appearance:none; border:1px solid #ddd; background:#fff; padding:4px 8px; border-radius:8px; cursor:pointer; font-size:12px; }
+  .reply-form { display:flex; gap:6px; margin-top:6px; }
+  .reply-form input[type="text"] { flex:1; padding:8px 10px; border:1px solid #ddd; border-radius:8px; }
+  .reply-form button { appearance:none; border:1px solid #ddd; background:#fff; padding:6px 10px; border-radius:8px; cursor:pointer; font-size:12px; }
+  .replies { margin-top:6px; padding-left:10px; border-left:2px solid #f0f0f0; }
+  .comment-like { margin-left:auto; cursor:pointer; user-select:none; color:#b71c1c; font-size:12px; display:flex; align-items:center; gap:4px; }
+  .comment-like.liked { color:#e53935; }
+  .comments-footer { padding:10px 14px; border-top:1px solid #eee; display:flex; gap:8px; }
+  .comments-footer input[type="text"] { flex:1; padding:10px 12px; border:1px solid #ddd; border-radius:10px; }
+  .comments-footer button { appearance: none; border: 1px solid #ddd; background: #fff; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-weight: 600; }
+  .reply-toggle { appearance:none; border:none; background:transparent; color:#d32f2f; cursor:pointer; padding:0; margin-top:6px; }
+</style>
+
+<div class="post-card" id="post-{{ post.uid }}" data-post-id="{{ post.uid }}">
+  <div class="post-header">
+    <div class="post-user">
+      <div class="avatar">
+        {% if post.author_avatar %}
+          <img src="{{ post.author_avatar }}" alt="{{ post.author_username }}" />
+        {% else %}
+          <img alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='36' height='36'><rect fill='%23eeeeee' width='100%' height='100%'/></svg>" />
+        {% endif %}
+      </div>
+      <a href="/user-profile/{{ post.author_username }}">@{{ post.author_username }}</a>
+    </div>
+    <button class="follow-btn" type="button">Seguir</button>
+  </div>
+  {% if post.images and post.images|length > 0 %}
+  <div class="post-media" data-index="0">
+    <img src="{{ post.images.0 }}" alt="Imagen de la publicación" />
+    {% if post.images|length > 1 %}
+      <div class="media-counter">1/{{ post.images|length }}</div>
+      <button type="button" class="nav-btn nav-prev" aria-label="Anterior">‹</button>
+      <button type="button" class="nav-btn nav-next" aria-label="Siguiente">›</button>
+    {% endif %}
+  </div>
+  {% endif %}
+  <h3 class="post-title">{{ post.title }}</h3>
+
+  <div class="post-body">
+    {% if post.description %}
+      <div class="accordion" id="acc-{{ post.uid }}">
+        <div class="accordion-content" id="acc-content-{{ post.uid }}">
+          <div class="post-text">{{ post.description }}</div>
+          {% if post.links and post.links|length > 0 %}
+          <div class="links" id="links-{{ post.uid }}">
+            {% for url in post.links %}
+              <a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ url }}</a>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if post.hashtags and post.hashtags|length > 0 %}
+          <div class="chips" id="tags-{{ post.uid }}">
+            {% for tag in post.hashtags %}
+              <span class="chip">#{{ tag }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        <button class="show-more" type="button" data-acc="acc-{{ post.uid }}">Mostrar más</button>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="post-footer">
+    <button class="like-btn" type="button" data-liked="false"><span>❤</span><span class="likes-count">{{ post.likes_count }}</span></button>
+    <button class="comments-btn" type="button"><span>💬</span><span class="comments-count">{{ post.comments_count }}</span></button>
+  </div>
+</div>
+
+<!-- Comments modal per post -->
+<div class="comments-modal" id="comments-{{ post.uid }}">
+  <div class="comments-card">
+    <div class="comments-header">
+      <span>Comentarios</span>
+      <button class="close-comments" type="button">Cerrar</button>
+    </div>
+    <div class="comments-body"></div>
+    <div class="comments-footer">
+      <input type="text" placeholder="Escribe un comentario" />
+      <button class="send-comment" type="button">Publicar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const root = document.getElementById('post-{{ post.uid }}');
+  if (!root) return;
+  const postId = root.dataset.postId;
+  const media = root.querySelector('.post-media');
+  const likeBtn = root.querySelector('.like-btn');
+  const likesCountEl = root.querySelector('.likes-count');
+  const commentsBtn = root.querySelector('.comments-btn');
+  const commentsModal = document.getElementById('comments-{{ post.uid }}');
+  const commentsBody = commentsModal.querySelector('.comments-body');
+  const commentsClose = commentsModal.querySelector('.close-comments');
+  const commentInput = commentsModal.querySelector('input');
+  const sendBtn = commentsModal.querySelector('.send-comment');
+
+  // Gallery
+  if (media) {
+    let index = 0;
+    const images = {{ post.images|safe|default:'[]' }};
+    const imgEl = media.querySelector('img');
+    const prev = media.querySelector('.nav-prev');
+    const next = media.querySelector('.nav-next');
+    const counter = media.querySelector('.media-counter');
+    function update(){
+      if (imgEl && images.length) imgEl.src = images[index];
+      if (counter) counter.textContent = (index+1) + '/' + images.length;
+    }
+    // initialize counter if present
+    if (counter) counter.textContent = (index+1) + '/' + images.length;
+    if (prev) prev.addEventListener('click', function(){ index = (index-1+images.length)%images.length; update(); });
+    if (next) next.addEventListener('click', function(){ index = (index+1)%images.length; update(); });
+  }
+
+  // Show more text -> reveal links & tags
+  const showMore = root.querySelector('.show-more');
+  if (showMore) {
+    const acc = document.getElementById(showMore.dataset.acc);
+    showMore.addEventListener('click', function(){
+      if (!acc) return;
+      acc.classList.toggle('open');
+      const opened = acc.classList.contains('open');
+      showMore.textContent = opened ? 'Mostrar menos' : 'Mostrar más';
+    });
+  }
+
+  // Likes
+  likeBtn.addEventListener('click', async function(){
+    try {
+      const res = await fetch(`/post/${postId}/like`, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!res.ok) return;
+      const data = await res.json();
+      likesCountEl.textContent = data.likes;
+      likeBtn.dataset.liked = data.liked ? 'true' : 'false';
+      likeBtn.querySelector('span').textContent = data.liked ? '❤' : '♡';
+    } catch(e) {}
+  });
+
+  // Comments
+  async function loadComments(){
+    commentsBody.innerHTML = '<div style="color:#777;">Cargando...</div>';
+    try {
+      const res = await fetch(`/post/${postId}/comments`);
+      const data = await res.json();
+
+      function esc(s){return String(s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]));}
+      function timeAgo(iso){
+        if(!iso) return '';
+        const d = new Date(iso); const diff = Math.floor((Date.now()-d.getTime())/1000);
+        const units = [[31536000,'año'],[2592000,'mes'],[604800,'sem'],[86400,'día'],[3600,'h'],[60,'min']];
+        for(const [sec, name] of units){ if(diff>=sec){ const val=Math.floor(diff/sec); return `hace ${val} ${name}${val>1 && name==='mes'?'es': val>1 && name==='día'?'s': val>1 && name==='año'?'s': ''}`; } }
+        return 'hace segundos';
+      }
+
+      function row(c){
+        const userHref = `/user-profile/${c.author_username}`;
+        const avatar = c.author_avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><rect fill='%23eeeeee' width='100%' height='100%'/></svg>";
+        const repliesHtml = (c.replies||[]).map(row).join('');
+        const hasReplies = !!(c.replies && c.replies.length);
+        return `<div class="comment-card" data-comment-id="${c.uid}">\
+  <div class="comment-header">\
+    <div class="ch-avatar"><img src="${avatar}" alt="${esc(c.author_username)}"/></div>\
+    <div class="ch-meta"><a href="${userHref}">@${esc(c.author_username)}</a><span class="ch-time"> · ${timeAgo(c.created_at)}</span></div>\
+    <span class="comment-like" data-liked="false" title="Me gusta">❤ <span class="cnt">${c.likes||0}</span></span>\
+  </div>\
+  <div class="comment-content">\
+    <div class="comment-text clamp">${esc(c.text)}</div>\
+    <span class="comment-show-more">Mostrar más</span>\
+  </div>\
+  <div class="comment-actions">\
+    <button class="reply-btn" type="button">Responder</button>\
+    <button class="toggle-replies" type="button" ${hasReplies?'':'style="display:none;"'}>${hasReplies?'Mostrar respuestas':'Mostrar respuestas'}</button>\
+  </div>\
+  <div class="reply-form" style="display:none;">\
+    <input type="text" placeholder="Escribe una respuesta"/>\
+    <button class="send-reply" type="button">Enviar</button>\
+  </div>\
+  <div class="replies" style="display:none;">${repliesHtml}</div>\
+</div>`; }
+
+      const html = (data.comments||[]).map(row).join('');
+      commentsBody.innerHTML = html || '<div style="color:#777;">No hay comentarios</div>';
+
+      // Wire up interactions
+      commentsBody.querySelectorAll('.comment-card').forEach(function(card){
+        const showMore = card.querySelector('.comment-show-more');
+        const textEl = card.querySelector('.comment-text');
+        if (showMore && textEl){
+          showMore.addEventListener('click', function(){
+            const clamped = textEl.classList.contains('clamp');
+            if (clamped){ textEl.classList.remove('clamp'); this.textContent = 'Mostrar menos'; }
+            else { textEl.classList.add('clamp'); this.textContent = 'Mostrar más'; }
+          });
+        }
+        const likeEl = card.querySelector('.comment-like');
+        if (likeEl){
+          likeEl.addEventListener('click', async function(){
+            const cid = card.getAttribute('data-comment-id');
+            try{
+              const res3 = await fetch(`/comment/${cid}/like`, { method:'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+              if(res3.ok){
+                const data3 = await res3.json();
+                likeEl.querySelector('.cnt').textContent = data3.likes;
+                likeEl.classList.toggle('liked', !!data3.liked);
+                likeEl.firstChild.textContent = data3.liked ? '❤ ' : '♡ ';
+              }
+            }catch(e){}
+          });
+        }
+        const repliesBtn = card.querySelector('.toggle-replies');
+        const repliesBox = card.querySelector('.replies');
+        if (repliesBtn && repliesBox){
+          repliesBtn.addEventListener('click', function(){
+            const open = repliesBox.style.display !== 'none';
+            repliesBox.style.display = open ? 'none' : 'block';
+            this.textContent = open ? 'Mostrar respuestas' : 'Ocultar respuestas';
+          });
+        }
+        const replyBtn = card.querySelector('.reply-btn');
+        const replyForm = card.querySelector('.reply-form');
+        const replyInput = replyForm ? replyForm.querySelector('input') : null;
+        const sendReply = replyForm ? replyForm.querySelector('.send-reply') : null;
+        if (replyBtn && replyForm){
+          replyBtn.addEventListener('click', function(){ replyForm.style.display = replyForm.style.display==='none' ? 'flex' : 'none'; if (replyForm.style.display==='flex' && replyInput) replyInput.focus(); });
+        }
+        if (sendReply && replyInput){
+          sendReply.addEventListener('click', async function(){
+            const txt = (replyInput.value||'').trim(); if (!txt) return;
+            const cid = card.getAttribute('data-comment-id');
+            const form = new FormData(); form.append('text', txt);
+            try {
+              const res2 = await fetch(`/post/${postId}/comment/${cid}/reply`, { method:'POST', body: form, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+              if (res2.ok){ replyInput.value=''; replyForm.style.display='none'; await loadComments(); }
+            } catch(e){}
+          });
+        }
+      });
+    } catch(e) { commentsBody.innerHTML = '<div style="color:#b71c1c;">Error al cargar comentarios</div>'; }
+  }
+
+  commentsBtn.addEventListener('click', function(){
+    commentsModal.classList.add('open');
+    loadComments();
+  });
+  commentsClose.addEventListener('click', function(){ commentsModal.classList.remove('open'); });
+  commentsModal.addEventListener('click', function(e){ if (e.target === commentsModal) commentsModal.classList.remove('open'); });
+
+  sendBtn.addEventListener('click', async function(){
+    const text = (commentInput.value||'').trim();
+    if (!text) return;
+    const form = new FormData();
+    form.append('text', text);
+    try {
+      const res = await fetch(`/post/${postId}/comment`, { method: 'POST', body: form, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (res.ok) {
+        commentInput.value = '';
+        await loadComments();
+        // bump comments count on card
+        const cnt = root.querySelector('.comments-count');
+        if (cnt) cnt.textContent = String(parseInt(cnt.textContent||'0', 10)+1);
+      }
+    } catch(e) {}
+  });
+})();
+</script>

@@ -1,13 +1,9 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Editar perfil</title>
+{% extends 'base_app.html' %}
+{% block title %}UniWeb • Editar perfil{% endblock %}
+{% block head_extra %}
   <style>
     :root { --red: #d32f2f; --red-dark: #b71c1c; --black: #111; --white: #fff; --border:#e6e6e6; }
-    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; background: var(--white); color: var(--black); }
-  .center-box { max-width: 560px; margin: 8vh auto; background: var(--white); border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,0.12); padding: 24px 28px; border: 1px solid var(--border); }
+    .center-box { max-width: 560px; margin: 8vh auto; background: var(--white); border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,0.12); padding: 24px 28px; border: 1px solid var(--border); }
   .form-section { padding: 12px; }
     h1 { margin: 0 0 16px; font-size: 22px; text-align: center; }
     form { display: grid; gap: 14px; }
@@ -42,8 +38,9 @@
     .btn-outline { background: transparent; color: var(--black); border: 1px solid #ddd; padding: 8px 12px; border-radius: 10px; cursor: pointer; }
     @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
   </style>
-</head>
-<body>
+  <link rel="stylesheet" href="https://unpkg.com/cropperjs@1.6.2/dist/cropper.min.css"/>
+{% endblock %}
+{% block content %}
   <div class="center-box">
     <h1>Editar perfil</h1>
     {% if error %}
@@ -137,9 +134,8 @@
       </div>
     </div>
   </div>
-
-  <!-- Cropper.js CDN -->
-  <link rel="stylesheet" href="https://unpkg.com/cropperjs@1.6.2/dist/cropper.min.css"/>
+{% endblock %}
+{% block scripts %}
   <script src="https://unpkg.com/cropperjs@1.6.2/dist/cropper.min.js"></script>
   <script>
     (function(){
@@ -239,5 +235,6 @@
       });
     })();
   </script>
+{% endblock %}
 </body>
 </html>

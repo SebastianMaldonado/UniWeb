@@ -1,0 +1,318 @@
+{% extends 'base_app.html' %}
+{% block title %}UniWeb • Nueva publicación{% endblock %}
+{% block head_extra %}
+  <style>
+    :root { --red:#d32f2f; --red-dark:#b71c1c; --black:#111; --white:#fff; --border:#e6e6e6; --soft:#f7f7f7; }
+    .new-post { display: grid; gap: 16px; }
+    .card { background: var(--white); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,0.08); }
+    .card-header { padding: 12px 16px; border-bottom: 1px solid #f1f1f1; font-weight: 700; }
+    .card-body { padding: 12px 16px; }
+
+    /* Preview (top) */
+    .preview .title { font-size: 18px; font-weight: 700; margin: 0 0 6px; }
+  .preview .media { margin: 8px 0; position: relative; aspect-ratio: 1 / 1; }
+  /* Match post card 1:1 rectangle */
+  .preview .media img { position:absolute; inset:0; width: 100%; height: 100%; object-fit: cover; border-radius: 12px; border: 1px solid var(--border); }
+    .preview .text { color:#333; white-space: pre-wrap; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+    .preview .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+    .preview .chip { padding:6px 10px; border-radius: 999px; border:1px solid #eee; background:#fafafa; font-size: 12px; }
+    .preview .links { display:grid; gap:4px; margin-top:6px; }
+    .preview .links a { color:#0d47a1; text-decoration:none; }
+    .preview .links a:hover { text-decoration: underline; }
+
+    /* Editor (bottom) */
+    .tabs { display:flex; gap:8px; border-bottom: 1px solid #f1f1f1; padding: 8px; }
+    .tab { appearance:none; border:1px solid #ddd; background:#fff; padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600; }
+    .tab.active { border-color: var(--red); color: var(--red-dark); }
+    .panel { display:none; padding: 12px 16px; }
+    .panel.active { display:block; }
+    .field { display:grid; gap:6px; margin-bottom:12px; }
+    .field input[type="text"], .field textarea { padding: 10px 12px; border:1px solid #ddd; border-radius:10px; }
+    .actions { display:flex; justify-content:flex-end; gap:10px; padding: 12px 16px; border-top:1px solid #f1f1f1; }
+    .btn { appearance:none; border:1px solid #ddd; background:#fff; padding: 10px 14px; border-radius: 10px; cursor: pointer; font-weight: 700; }
+    .btn.primary { background: var(--red); color:#fff; border-color: var(--red); }
+    .error { color: var(--red-dark); background:#fff5f5; border:1px solid #ffd6d6; padding: 10px 12px; border-radius: 12px; margin-bottom: 8px; }
+
+    /* Images grid */
+    .grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
+    .tile { position: relative; aspect-ratio: 1 / 1; border:1px solid #eee; border-radius: 12px; overflow:hidden; background:#fafafa; display:flex; align-items:center; justify-content:center; }
+    .tile img { width:100%; height:100%; object-fit: cover; display:block; }
+    .tile .controls { position:absolute; bottom:6px; left:6px; right:6px; display:flex; gap:6px; justify-content:space-between; }
+    .tile .controls button { appearance:none; border:1px solid #ddd; background:#fff; padding:6px 8px; border-radius: 10px; cursor:pointer; }
+    .tile.add { background:#333; color:#fff; cursor:pointer; font-size: 28px; }
+
+    /* Cropper modal */
+    .modal { position: fixed; inset:0; background:rgba(0,0,0,0.6); display:none; align-items:center; justify-content:center; z-index: 2000; }
+    .modal.open { display:flex; }
+    .modal-card { background:#fff; width:min(92vw, 900px); max-height:88vh; border-radius:12px; overflow:hidden; display:flex; flex-direction:column; }
+    .modal-header { padding:10px 14px; border-bottom:1px solid #eee; font-weight:700; }
+    .modal-body { padding: 10px 14px; overflow:auto; }
+    .modal-actions { padding:10px 14px; border-top:1px solid #eee; display:flex; gap:10px; justify-content:flex-end; }
+  </style>
+  <link rel="stylesheet" href="https://unpkg.com/cropperjs@1.6.2/dist/cropper.min.css"/>
+{% endblock %}
+
+{% block content %}
+  <div class="new-post">
+    <!-- Preview -->
+    <section class="card preview">
+      <div class="card-header">Previsualización</div>
+      <div class="card-body">
+        <div class="title" id="pv-title">(Sin título)</div>
+        <div class="media" id="pv-media" style="display:none;"><img id="pv-img" alt="" /></div>
+        <div class="text" id="pv-text" style="display:none;"></div>
+        <div class="links" id="pv-links" style="display:none;"></div>
+        <div class="chips" id="pv-tags" style="display:none;"></div>
+      </div>
+    </section>
+
+    <!-- Editor -->
+    <section class="card editor">
+      <div class="card-header">Editor</div>
+      <form method="post" action="/new-post" id="newPostForm">
+        {% csrf_token %}
+        {% if error %}
+          <div class="error">{{ error }}</div>
+        {% endif %}
+        <div class="tabs">
+          <button class="tab active" data-tab="title" type="button">Título</button>
+          <button class="tab" data-tab="text" type="button">Texto</button>
+          <button class="tab" data-tab="images" type="button">Imágenes</button>
+          <button class="tab" data-tab="links" type="button">Enlaces</button>
+          <button class="tab" data-tab="tags" type="button">Temas</button>
+        </div>
+
+        <!-- Panels -->
+        <div class="panel active" id="panel-title">
+          <div class="field">
+            <label for="title">Título</label>
+            <input id="title" name="title" type="text" placeholder="Escribe un título" />
+          </div>
+        </div>
+
+        <div class="panel" id="panel-text">
+          <div class="field">
+            <label for="description">Texto</label>
+            <textarea id="description" name="description" maxlength="500" placeholder="Máximo 500 caracteres..."></textarea>
+          </div>
+        </div>
+
+        <div class="panel" id="panel-images">
+          <div class="grid" id="imagesGrid"></div>
+          <input id="fileInput" type="file" accept="image/png,image/jpeg" style="display:none;" />
+          <input id="imagesField" name="images[]" type="hidden" />
+        </div>
+
+        <div class="panel" id="panel-links">
+          <div class="field">
+            <label for="linkInput">Añadir enlace</label>
+            <div style="display:flex; gap:8px;">
+              <input id="linkInput" type="text" placeholder="https://..." />
+              <button class="btn" type="button" id="addLink">Añadir</button>
+            </div>
+          </div>
+          <div id="linksList" style="display:grid; gap:6px;"></div>
+        </div>
+
+        <div class="panel" id="panel-tags">
+          <div class="field">
+            <label for="tagInput">Añadir tema (hashtag)</label>
+            <div style="display:flex; gap:8px;">
+              <input id="tagInput" type="text" placeholder="#tema" />
+              <button class="btn" type="button" id="addTag">Añadir</button>
+            </div>
+          </div>
+          <div id="tagsList" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" type="button" id="cancelBtn" onclick="location.href='/home'">Cancelar</button>
+          <button class="btn primary" type="submit">Publicar</button>
+        </div>
+
+        <!-- hidden array inputs for links/tags -->
+        <div id="hiddenArrays"></div>
+      </form>
+    </section>
+  </div>
+
+  <!-- Cropper modal -->
+  <div id="cropperModal" class="modal" role="dialog" aria-modal="true" aria-label="Recortar imagen">
+    <div class="modal-card">
+      <div class="modal-header">Recortar imagen (500x500)</div>
+      <div class="modal-body">
+        <img id="cropperImage" alt="Imagen a recortar" style="max-width:100%; display:block;" />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="cropperCancel">Cancelar</button>
+        <button type="button" class="btn primary" id="cropperApply">Aplicar</button>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="https://unpkg.com/cropperjs@1.6.2/dist/cropper.min.js"></script>
+  <script>
+    (function(){
+      // Tabs
+      const tabs = document.querySelectorAll('.tab');
+      const panels = {
+        title: document.getElementById('panel-title'),
+        text: document.getElementById('panel-text'),
+        images: document.getElementById('panel-images'),
+        links: document.getElementById('panel-links'),
+        tags: document.getElementById('panel-tags'),
+      };
+      tabs.forEach(t => t.addEventListener('click', () => {
+        tabs.forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+        Object.values(panels).forEach(p => p.classList.remove('active'));
+        const key = t.dataset.tab; panels[key].classList.add('active');
+      }));
+
+      // State
+      const state = {
+        title: '',
+        description: '',
+        images: [], // data URLs
+        links: [],
+        tags: [],
+      };
+
+      // Preview DOM
+      const pvTitle = document.getElementById('pv-title');
+      const pvMedia = document.getElementById('pv-media');
+      const pvImg = document.getElementById('pv-img');
+      const pvText = document.getElementById('pv-text');
+      const pvLinks = document.getElementById('pv-links');
+      const pvTags = document.getElementById('pv-tags');
+
+      function renderPreview(){
+        pvTitle.textContent = state.title || '(Sin título)';
+        if (state.images.length) {
+          pvMedia.style.display = '';
+          pvImg.src = state.images[0];
+        } else {
+          pvMedia.style.display = 'none';
+          pvImg.removeAttribute('src');
+        }
+        if (state.description) {
+          pvText.style.display = '';
+          pvText.textContent = state.description;
+        } else { pvText.style.display = 'none'; pvText.textContent = ''; }
+        if (state.links.length) {
+          pvLinks.style.display = 'grid';
+          pvLinks.innerHTML = state.links.map(u => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`).join('');
+        } else { pvLinks.style.display = 'none'; pvLinks.innerHTML = ''; }
+        if (state.tags.length) {
+          pvTags.style.display = 'flex';
+          pvTags.innerHTML = state.tags.map(t => `<span class='chip'>#${t.replace(/^#/,'')}</span>`).join('');
+        } else { pvTags.style.display = 'none'; pvTags.innerHTML = ''; }
+      }
+
+      // Bind inputs
+      const titleInput = document.getElementById('title');
+      const descInput = document.getElementById('description');
+      titleInput.addEventListener('input', () => { state.title = titleInput.value; renderPreview(); });
+      descInput.addEventListener('input', () => { state.description = descInput.value.slice(0, 500); renderPreview(); });
+
+      // Images grid
+      const grid = document.getElementById('imagesGrid');
+      const fileInput = document.getElementById('fileInput');
+      let cropper = null; const modal = document.getElementById('cropperModal');
+      const cropImg = document.getElementById('cropperImage');
+      const cropCancel = document.getElementById('cropperCancel');
+      const cropApply = document.getElementById('cropperApply');
+
+      function renderGrid(){
+        grid.innerHTML = '';
+        state.images.forEach((src, i) => {
+          const tile = document.createElement('div'); tile.className = 'tile';
+          tile.innerHTML = `<img src="${src}" alt=""/>\
+            <div class='controls'>\
+              <div>\
+                <button type='button' data-act='left' data-i='${i}'>←</button>\
+                <button type='button' data-act='right' data-i='${i}'>→</button>\
+              </div>\
+              <button type='button' data-act='del' data-i='${i}'>🗑</button>\
+            </div>`;
+          grid.appendChild(tile);
+        });
+        const add = document.createElement('div'); add.className = 'tile add'; add.textContent = '+';
+        add.addEventListener('click', () => fileInput.click());
+        grid.appendChild(add);
+      }
+
+      function openCropper(file){
+        if (!file || !/^image\/(png|jpeg)$/.test(file.type)) { alert('El archivo debe ser PNG o JPG.'); return; }
+        const reader = new FileReader();
+        reader.onload = e => {
+          cropImg.src = e.target.result;
+          modal.classList.add('open');
+          if (cropper) { cropper.destroy(); cropper = null; }
+          cropper = new Cropper(cropImg, { aspectRatio: 1, viewMode: 1, autoCropArea: 1, background:false });
+        };
+        reader.readAsDataURL(file);
+      }
+
+      fileInput.addEventListener('change', e => { const f = e.target.files && e.target.files[0]; openCropper(f); fileInput.value = ''; });
+      cropCancel.addEventListener('click', () => { if (cropper) cropper.destroy(); cropper = null; modal.classList.remove('open'); cropImg.src=''; });
+      cropApply.addEventListener('click', () => {
+        if (!cropper) return;
+        const canvas = cropper.getCroppedCanvas({ width: 500, height: 500, imageSmoothingQuality:'high' });
+        canvas.toBlob(blob => {
+          const r = new FileReader();
+          r.onloadend = () => { state.images.push(r.result); renderGrid(); renderPreview(); cropCancel.click(); };
+          r.readAsDataURL(blob);
+        }, 'image/jpeg', 0.9);
+      });
+
+      grid.addEventListener('click', e => {
+        const act = e.target.dataset && e.target.dataset.act; if (!act) return;
+        const i = parseInt(e.target.dataset.i, 10);
+        if (Number.isNaN(i)) return;
+        if (act === 'left' && i > 0) { const tmp = state.images[i-1]; state.images[i-1] = state.images[i]; state.images[i] = tmp; }
+        if (act === 'right' && i < state.images.length-1) { const tmp = state.images[i+1]; state.images[i+1] = state.images[i]; state.images[i] = tmp; }
+        if (act === 'del') { state.images.splice(i,1); }
+        renderGrid(); renderPreview();
+      });
+
+      // Links
+      const linkInput = document.getElementById('linkInput'); const addLink = document.getElementById('addLink'); const linksList = document.getElementById('linksList');
+      function renderLinks(){
+        linksList.innerHTML = state.links.map((u, i) => `<div style='display:flex; align-items:center; gap:8px;'>\
+          <a href='${u}' target='_blank' rel='noopener noreferrer'>${u}</a>\
+          <button type='button' class='btn' data-li='${i}'>Quitar</button>\
+        </div>`).join('');
+        renderPreview();
+      }
+      addLink.addEventListener('click', () => { const u = (linkInput.value||'').trim(); if (!u) return; state.links.push(u); linkInput.value=''; renderLinks(); });
+      linksList.addEventListener('click', e => { const i = e.target.dataset && e.target.dataset.li; if (i!=null) { state.links.splice(parseInt(i,10),1); renderLinks(); }});
+
+      // Tags
+      const tagInput = document.getElementById('tagInput'); const addTag = document.getElementById('addTag'); const tagsList = document.getElementById('tagsList');
+      function renderTags(){
+        tagsList.innerHTML = state.tags.map((t, i) => `<span class='chip'>#${t.replace(/^#/,'')}</span> <button type='button' class='btn' data-ti='${i}'>Quitar</button>`).join(' ');
+        renderPreview();
+      }
+      addTag.addEventListener('click', () => { let t = (tagInput.value||'').trim(); if (!t) return; if (t.startsWith('#')) t = t.slice(1); state.tags.push(t); tagInput.value=''; renderTags(); });
+      tagsList.addEventListener('click', e => { const i = e.target.dataset && e.target.dataset.ti; if (i!=null) { state.tags.splice(parseInt(i,10),1); renderTags(); }});
+
+      // Form submit: populate hidden arrays
+      const form = document.getElementById('newPostForm');
+      const hidden = document.getElementById('hiddenArrays');
+      form.addEventListener('submit', () => {
+        // sync state to inputs
+        // title/description are bound directly
+        hidden.innerHTML = '';
+        state.links.forEach(v => { const i = document.createElement('input'); i.type='hidden'; i.name='links[]'; i.value=v; hidden.appendChild(i); });
+        state.tags.forEach(v => { const i = document.createElement('input'); i.type='hidden'; i.name='hashtags[]'; i.value=v; hidden.appendChild(i); });
+        state.images.forEach(v => { const i = document.createElement('input'); i.type='hidden'; i.name='images[]'; i.value=v; hidden.appendChild(i); });
+      });
+
+      // Initial render
+      renderPreview(); renderGrid();
+    })();
+  </script>
+{% endblock %}
