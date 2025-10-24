@@ -265,7 +265,7 @@
   <div class="replies" style="display:none;">${repliesHtml}</div>\
 </div>`; }
 
-      const html = (data.comments||[]).map(row).join('');
+  const html = (data.comments||[]).map(row).join('');
       commentsBody.innerHTML = html || '<div style="color:#777;">No hay comentarios</div>';
 
       // Wire up interactions
@@ -322,6 +322,15 @@
           });
         }
       });
+      // If a specific comment must be highlighted
+      if (window.__highlightCommentId){
+        var target = commentsBody.querySelector('.comment-card[data-comment-id="'+window.__highlightCommentId+'"]');
+        if (target){
+          target.style.boxShadow = '0 0 0 3px rgba(25,118,210,0.35)';
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setTimeout(function(){ target.style.boxShadow = ''; }, 2000);
+        }
+      }
     } catch(e) { commentsBody.innerHTML = '<div style="color:#b71c1c;">Error al cargar comentarios</div>'; }
   }
 

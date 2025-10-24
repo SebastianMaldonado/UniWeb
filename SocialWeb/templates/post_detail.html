@@ -1,0 +1,19 @@
+{% extends 'base_app.html' %}
+{% block title %}UniWeb • Publicación{% endblock %}
+{% block content %}
+  {% include 'post_card.html' with post=post %}
+  <script>
+    (function(){
+      var cid = '{{ comment_to_open|default:"" }}';
+      if (!cid) return;
+      // open comments modal and highlight specific comment
+      var card = document.querySelector('#post-{{ post.uid }}');
+      if (!card) return;
+      window.__highlightCommentId = cid;
+      var btn = card.querySelector('.comments-btn');
+      if (btn) {
+        btn.click();
+      }
+    })();
+  </script>
+{% endblock %}

@@ -22,4 +22,5 @@ urlpatterns = [
     path("post/<str:post_uid>/comment", views.post_add_comment, name="post_add_comment"),
     path("post/<str:post_uid>/comment/<str:comment_uid>/reply", views.post_add_reply, name="post_add_reply"),
     path("comment/<str:comment_uid>/like", views.comment_like_toggle, name="comment_like_toggle"),
+    path("post/<str:post_uid>", views.post_detail_view, name="post_detail"),
 ]

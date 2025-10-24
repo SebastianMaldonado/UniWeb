@@ -17,10 +17,11 @@
       padding: 0 16px; border-bottom: 1px solid #eee; position: sticky; top: 0; background: var(--white); z-index: 10;
     }
     .brand { font-weight: 800; letter-spacing: 0.5px; }
-    .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; border: 1px solid #eee; background: var(--white); cursor: pointer; text-decoration: none; color: var(--black); }
+  .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; border: 1px solid #eee; background: var(--white); cursor: pointer; text-decoration: none; color: var(--black); position: relative; }
     .icon-btn:hover { border-color: var(--red); }
     .icon { width: 18px; height: 18px; display: inline-block; }
     .icon svg { width: 18px; height: 18px; }
+  .notif-dot { position:absolute; top:-2px; right:-2px; width:10px; height:10px; background:#e53935; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,0.06); }
 
   main.app-content { flex: 1; background: var(--soft); padding-bottom: 72px; }
     .content-inner { max-width: 780px; margin: 0 auto; padding: 16px; }
@@ -54,6 +55,7 @@
               <path d="M13.73 21a2 2 0 01-3.46 0"/>
             </svg>
           </span>
+          {% if has_unread_notifications %}<span class="notif-dot" aria-hidden="true"></span>{% endif %}
         </a>
         <a class="icon-btn" href="{% url 'logout' %}" title="Cerrar sesión">
           <span class="icon" aria-hidden="true">

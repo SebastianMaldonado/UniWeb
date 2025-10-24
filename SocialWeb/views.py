@@ -14,7 +14,7 @@ from django.utils.text import get_valid_filename
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 
-from .models import User, Post, Comment
+from .models import User, Post, Comment, Notification
 
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
@@ -91,6 +91,8 @@ def home(request: HttpRequest) -> HttpResponse:
 	feed_latest = [p for p in all_posts if id(p) not in picked]
 
 	feed = feed_following + feed_interests + feed_latest
+	# Do not show my own posts in home feed
+	feed = [p for p in feed if p.author_username != username]
 	# limit initial feed
 	feed = feed[:20]
 
@@ -424,6 +426,8 @@ def profile_view(request: HttpRequest) -> HttpResponse:
 		"followers_json": json.dumps(followers_ctx),
 		"following_json": json.dumps(following_ctx),
 		"posts": [_serialize_post_card(p, following_usernames=following_set, me_username=user.username) for p in user_posts],
+			"is_self": True,
+			"is_following": False,
 	}
 	return render(request, "profile.html", context)
 
@@ -560,6 +564,20 @@ def post_like_toggle(request: HttpRequest, post_uid: str) -> HttpResponse:
 	else:
 		post.liked_by.connect(user)
 		liked = True
+		# create notification to post author (if not self)
+		if post.author_username != user.username:
+			try:
+				Notification(
+					to_username=post.author_username,
+					to_uid=post.author_uid,
+					from_username=user.username,
+					from_uid=user.uid,
+					type='like_post',
+					target_uid=post.uid,
+					element_type='post',
+				).save()
+			except Exception:
+				pass
 	return HttpResponse(json.dumps({"liked": liked, "likes": _safe_rel_count(post, 'liked_by')}), content_type="application/json")
 
 
@@ -625,6 +643,20 @@ def post_add_comment(request: HttpRequest, post_uid: str) -> HttpResponse:
 		text = text[:500]
 	c = Comment(text=text, author_username=me.username, author_uid=me.uid).save()
 	post.comments.connect(c)
+	# notify post author if different
+	if post.author_username != me.username:
+		try:
+			Notification(
+				to_username=post.author_username,
+				to_uid=post.author_uid,
+				from_username=me.username,
+				from_uid=me.uid,
+				type='comment_post',
+				target_uid=c.uid,
+				element_type='comment',
+			).save()
+		except Exception:
+			pass
 	return HttpResponse(json.dumps({"ok": True}), content_type="application/json")
 
 
@@ -655,6 +687,24 @@ def post_add_reply(request: HttpRequest, post_uid: str, comment_uid: str) -> Htt
 		text = text[:500]
 	rep = Comment(text=text, author_username=me.username, author_uid=me.uid).save()
 	parent.replies.connect(rep)
+	# notify parent comment author if different
+	try:
+		target_user = parent.author_username
+	except Exception:
+		target_user = None
+	if target_user and target_user != me.username:
+		try:
+			Notification(
+				to_username=parent.author_username,
+				to_uid=parent.author_uid,
+				from_username=me.username,
+				from_uid=me.uid,
+				type='reply_comment',
+				target_uid=rep.uid,
+				element_type='comment',
+			).save()
+		except Exception:
+			pass
 	return HttpResponse(json.dumps({"ok": True}), content_type="application/json")
 
 
@@ -683,6 +733,20 @@ def comment_like_toggle(request: HttpRequest, comment_uid: str) -> HttpResponse:
 	else:
 		comment.liked_by.connect(user)
 		liked = True
+		# notification to comment author if not self
+		if comment.author_username != user.username:
+			try:
+				Notification(
+					to_username=comment.author_username,
+					to_uid=comment.author_uid,
+					from_username=user.username,
+					from_uid=user.uid,
+					type='like_comment',
+					target_uid=comment.uid,
+					element_type='comment',
+				).save()
+			except Exception:
+				pass
 	return HttpResponse(json.dumps({"liked": liked, "likes": _safe_rel_count(comment, 'liked_by')}), content_type="application/json")
 
 
@@ -707,4 +771,128 @@ def follow_toggle(request: HttpRequest, username: str) -> HttpResponse:
 	else:
 		me.following.connect(target)
 		following = True
+		# notification to the target when newly followed
+		try:
+			Notification(
+				to_username=target.username,
+				to_uid=target.uid,
+				from_username=me.username,
+				from_uid=me.uid,
+				type='follow',
+				target_uid=me.username,
+				element_type='account',
+			).save()
+		except Exception:
+			pass
 	return HttpResponse(json.dumps({"following": following}), content_type="application/json")
+
+
+def _resolve_post_uid_for_comment(comment_uid: str) -> Optional[str]:
+	try:
+		c = Comment.nodes.get(uid=comment_uid)
+		# traverse back to post
+		posts = list(c.on_post.all())
+		if posts:
+			return posts[0].uid
+		# if it's a reply, find root post via parent chain
+		parents = list(c.on_comment.all())
+		while parents:
+			parent = parents[0]
+			posts = list(parent.on_post.all())
+			if posts:
+				return posts[0].uid
+			parents = list(parent.on_comment.all())
+	except Exception:
+		return None
+	return None
+
+
+def notifications_view(request: HttpRequest) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe:
+		return maybe
+	me_username = _get_logged_in_username(request)
+	me = _get_user_by_username(me_username)
+	if not me:
+		return redirect('login')
+	# fetch notifications for me
+	try:
+		all_notifs = list(Notification.nodes.filter(to_username=me_username))
+	except Exception:
+		all_notifs = []
+	all_notifs.sort(key=lambda n: getattr(n, 'created_at', None) or 0, reverse=True)
+	# mark as seen
+	for n in all_notifs:
+		try:
+			if not getattr(n, 'seen', False):
+				n.seen = True
+				n.save()
+		except Exception:
+			pass
+
+	# compute my following for button states
+	try:
+		me_following = set(u.username for u in me.following.all())
+	except Exception:
+		me_following = set()
+
+	def build(n: Notification) -> dict:
+		base = {
+			'uid': n.uid,
+			'type': n.type,
+			'from_username': n.from_username,
+			'created_at': n.created_at.isoformat() if getattr(n, 'created_at', None) else '',
+			'seen': getattr(n, 'seen', False),
+			'target_uid': getattr(n, 'target_uid', '') or '',
+			'element_type': getattr(n, 'element_type', '') or '',
+		}
+		if n.type == 'follow':
+			base['icon'] = 'person'
+			base['text'] = f"{n.from_username} te empezó a seguir"
+			base['cta'] = 'follow'
+			base['is_following'] = n.from_username in me_following
+		elif n.type in ('like_post', 'like_comment'):
+			base['icon'] = 'heart'
+			target = 'publicación' if n.type == 'like_post' else 'comentario'
+			base['text'] = f"{n.from_username} reaccionó a tu {target}"
+			# derive post uid for comment
+			post_uid = n.target_uid if n.element_type == 'post' else _resolve_post_uid_for_comment(n.target_uid)
+			base['post_uid'] = post_uid
+			base['cta'] = 'view_post' if n.type == 'like_post' else 'view_comment'
+		elif n.type == 'comment_post':
+			base['icon'] = 'comment'
+			base['text'] = f"{n.from_username} comentó tu publicación"
+			base['post_uid'] = _resolve_post_uid_for_comment(n.target_uid)
+			base['cta'] = 'view_comment'
+		elif n.type == 'reply_comment':
+			base['icon'] = 'comment'
+			base['text'] = f"{n.from_username} respondió a tu comentario"
+			base['post_uid'] = _resolve_post_uid_for_comment(n.target_uid)
+			base['cta'] = 'view_comment'
+		else:
+			base['icon'] = 'bell'
+			base['text'] = f"{n.from_username} tiene una actualización"
+			base['cta'] = None
+		return base
+
+	notifs_ctx = [build(n) for n in all_notifs]
+	return render(request, 'notifications.html', { 'notifications': notifs_ctx })
+
+
+def post_detail_view(request: HttpRequest, post_uid: str) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe:
+		return maybe
+	try:
+		post = Post.nodes.get(uid=post_uid)
+	except Post.DoesNotExist:
+		return HttpResponse(status=404)
+	me_username = _get_logged_in_username(request)
+	me = _get_user_by_username(me_username)
+	try:
+		following_set = set(u.username for u in (list(me.following.all()) if me else []))
+	except Exception:
+		following_set = set()
+	post_ctx = _serialize_post_card(post, following_usernames=following_set, me_username=me_username)
+	comment_to_open = request.GET.get('comment', '')
+	return render(request, 'post_detail.html', { 'post': post_ctx, 'comment_to_open': comment_to_open })

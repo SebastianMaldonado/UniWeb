@@ -1,5 +1,69 @@
 {% extends 'base_app.html' %}
 {% block title %}UniWeb • Notificaciones{% endblock %}
 {% block content %}
-  <!-- Lista de notificaciones - vacío por ahora -->
+  <style>
+    .notif-list { display: grid; gap: 8px; }
+    .notif-item { display:grid; grid-template-columns: 36px 1fr auto; align-items:center; gap:10px; padding:10px 12px; background:#fff; border:1px solid #eee; border-radius:12px; }
+    .notif-icon { width: 36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:10px; border:1px solid #eee; }
+    .notif-text { font-size: 14px; }
+    .notif-time { color:#757575; font-size: 12px; }
+    .notif-cta { display:flex; gap:8px; }
+    .btn { appearance:none; border:1px solid #ddd; background:#fff; padding:6px 10px; border-radius:10px; cursor:pointer; font-weight:600; }
+    .btn-primary { background:#1976d2; border-color:#1976d2; color:#fff; }
+  </style>
+
+  {% if notifications and notifications|length > 0 %}
+    <div class="notif-list">
+      {% for n in notifications %}
+  <div class="notif-item" data-notif-id="{{ n.uid }}" data-type="{{ n.type }}" data-from="{{ n.from_username }}" data-post-id="{{ n.post_uid }}" data-target-uid="{{ n.target_uid }}">
+          <div class="notif-icon">
+            {% if n.icon == 'person' %}
+            <span aria-hidden="true">👤</span>
+            {% elif n.icon == 'heart' %}
+            <span aria-hidden="true">❤</span>
+            {% elif n.icon == 'comment' %}
+            <span aria-hidden="true">💬</span>
+            {% else %}
+            <span aria-hidden="true">🔔</span>
+            {% endif %}
+          </div>
+          <div>
+            <div class="notif-text">{{ n.text }}</div>
+            <div class="notif-time">{{ n.created_at }}</div>
+          </div>
+          <div class="notif-cta">
+            {% if n.cta == 'follow' %}
+              <button class="btn follow-btn" data-username="{{ n.from_username }}" data-following="{{ n.is_following|yesno:'true,false' }}">{{ n.is_following|yesno:'Dejar de seguir,Seguir' }}</button>
+            {% elif n.cta == 'view_post' %}
+              <a class="btn btn-primary" href="/post/{{ n.post_uid }}">Ver publicación</a>
+            {% elif n.cta == 'view_comment' %}
+              <a class="btn btn-primary" href="/post/{{ n.post_uid }}?comment={{ n.target_uid }}">Ver comentario</a>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div style="padding:16px; color:#777; background:#fff; border:1px solid #eee; border-radius:12px;">No tienes notificaciones</div>
+  {% endif %}
+
+  <script>
+    (function(){
+      document.querySelectorAll('.notif-item .follow-btn').forEach(function(btn){
+        btn.addEventListener('click', async function(){
+          const uname = this.getAttribute('data-username');
+          try{
+            const res = await fetch(`/user/${encodeURIComponent(uname)}/follow-toggle`, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            if(res.ok){
+              const data = await res.json();
+              const following = !!data.following;
+              this.setAttribute('data-following', following ? 'true' : 'false');
+              this.textContent = following ? 'Dejar de seguir' : 'Seguir';
+              document.dispatchEvent(new CustomEvent('follow-changed', { detail: { username: uname, following } }));
+            }
+          }catch(e){}
+        });
+      });
+    })();
+  </script>
 {% endblock %}

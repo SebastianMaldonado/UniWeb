@@ -8,6 +8,7 @@ from neomodel import (
 	JSONProperty,
 	RelationshipTo,
 	RelationshipFrom,
+    BooleanProperty,
 )
 
 
@@ -80,3 +81,23 @@ class Comment(StructuredNode):
 
 	def __str__(self) -> str:  # pragma: no cover
 		return f"Comment(author={self.author_username}, text={self.text[:20]!r})"
+
+
+	class Notification(StructuredNode):
+		"""Notification node for user actions."""
+		uid = UniqueIdProperty()
+		to_username = StringProperty(required=True, index=True)
+		to_uid = StringProperty(required=False, index=True)
+		from_username = StringProperty(required=True, index=True)
+		from_uid = StringProperty(required=False, index=True)
+		type = StringProperty(required=True)  # follow, like_post, like_comment, comment_post, reply_comment
+		created_at = DateTimeProperty(default_now=True, index=True)
+		seen = BooleanProperty(default=False)
+		target_uid = StringProperty(required=False)
+		element_type = StringProperty(required=False)  # account, post, comment
+
+		def __str__(self) -> str:  # pragma: no cover
+			return f"Notification(type={self.type}, to={self.to_username}, from={self.from_username})"
+
+# Expose Notification at module level for imports
+Notification = Comment.Notification
