@@ -190,18 +190,18 @@ def profile_edit_view(request: HttpRequest) -> HttpResponse:
 		if len(bio) > 200:
 			bio = bio[:200]
 		birthdate = request.POST.get("birthdate", "").strip()
+		birthdate_dt = None
 
 		if not error and gender and gender not in genders:
 			error = "Género inválido."
 
-		# Validate birthdate as YYYY-MM-DD
+		# Validate birthdate as YYYY-MM-DD and convert to datetime.date
 		if not error and birthdate:
 			try:
-				# Let the browser send ISO date, we store as string parsing handled by neomodel DateProperty
 				from datetime import date
 				parts = [int(p) for p in birthdate.split("-")]
 				if len(parts) == 3:
-					date(parts[0], parts[1], parts[2])
+					birthdate_dt = date(parts[0], parts[1], parts[2])
 				else:
 					raise ValueError
 			except Exception:
@@ -246,7 +246,7 @@ def profile_edit_view(request: HttpRequest) -> HttpResponse:
 			# Persist other fields
 			user.gender = gender
 			user.bio = bio or None
-			user.birthdate = birthdate or None
+			user.birthdate = birthdate_dt if birthdate else None
 			user.save()
 			return redirect("home")
 
@@ -406,6 +406,49 @@ def chat_view(request: HttpRequest) -> HttpResponse:
 		following_ctx.append({
 			"username": u.username,
 			"profile_image_url": getattr(u, "profile_image_url", "") or "",
+			"unread_count": unread_count,
+			"last_unread_ago": last_ago,
+		})
+
+	# Also include users I've chatted with before (even if not following)
+	try:
+		msgs_out = list(Message.nodes.filter(sender_username=me_username))
+	except Exception:
+		msgs_out = []
+	try:
+		msgs_in = list(Message.nodes.filter(receiver_username=me_username))
+	except Exception:
+		msgs_in = []
+	partners = set()
+	for m in msgs_out:
+		other = getattr(m, 'receiver_username', None)
+		if other and other != me_username:
+			partners.add(other)
+	for m in msgs_in:
+		other = getattr(m, 'sender_username', None)
+		if other and other != me_username:
+			partners.add(other)
+	# Index existing following entries to avoid duplicates
+	existing = {d["username"] for d in following_ctx}
+	for uname in partners:
+		if uname in existing:
+			continue
+		u = _get_user_by_username(uname)
+		unread_count = 0
+		last_ago = ""
+		try:
+			unread = list(Message.nodes.filter(sender_username=uname, receiver_username=me_username, seen=False))
+			unread_count = len(unread)
+			if unread:
+				unread.sort(key=lambda m: getattr(m, 'created_at', None) or 0, reverse=True)
+				last_dt = getattr(unread[0], 'created_at', None)
+				if last_dt:
+					last_ago = _ago(last_dt)
+		except Exception:
+			pass
+		following_ctx.append({
+			"username": uname,
+			"profile_image_url": getattr(u, "profile_image_url", "") if u else "",
 			"unread_count": unread_count,
 			"last_unread_ago": last_ago,
 		})

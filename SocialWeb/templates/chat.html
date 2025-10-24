@@ -37,9 +37,12 @@
 
   <div class="chat-page">
     <aside class="chat-sidebar">
+      <div style="position:sticky; top:0; background:#fff; padding:8px; border-bottom:1px solid #eee; z-index:1;">
+        <input id="chatSearch" type="text" placeholder="Buscar por nombre" style="width:100%; padding:8px 10px; border:1px solid #ddd; border-radius:10px;" />
+      </div>
       {% if following and following|length > 0 %}
         {% for u in following %}
-          <a class="chat-user" href="/chat?user={{ u.username }}">
+          <a class="chat-user" data-username="{{ u.username|lower }}" href="/chat?user={{ u.username }}">
             <div class="cu-img">
               {% if u.profile_image_url %}
                 <img src="{{ u.profile_image_url }}" alt="{{ u.username }}" />
@@ -87,6 +90,22 @@
       {% endif %}
     </section>
   </div>
+
+  <script>
+  (function(){
+    // Filtro de búsqueda en la barra lateral (siempre activo)
+    const search = document.getElementById('chatSearch');
+    if (search){
+      search.addEventListener('input', function(){
+        const term = (this.value || '').trim().toLowerCase();
+        document.querySelectorAll('.chat-sidebar .chat-user').forEach(function(a){
+          const uname = a.getAttribute('data-username') || '';
+          a.style.display = (!term || uname.includes(term)) ? '' : 'none';
+        });
+      });
+    }
+  })();
+  </script>
 
   {% if selected %}
   <div id="imgOverlay" class="img-overlay"><div class="inner"><img alt="" id="overlayImg" /><button id="overlayClose" class="close" type="button">×</button></div></div>
