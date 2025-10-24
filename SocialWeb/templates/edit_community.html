@@ -1,0 +1,185 @@
+{% extends 'base_app.html' %}
+{% block title %}UniWeb • Editar comunidad{% endblock %}
+{% block head_extra %}
+  <style>
+    .card { background:#fff; border:1px solid #eee; border-radius:12px; }
+    .card-header { padding:10px 14px; border-bottom:1px solid #eee; font-weight:700; }
+    .card-body { padding:10px 14px; }
+    .field { display:grid; gap:6px; margin-bottom:12px; }
+    .field input[type="text"], .field textarea { padding:10px 12px; border:1px solid #ddd; border-radius:10px; }
+    .actions { padding:10px 14px; border-top:1px solid #eee; display:flex; gap:10px; justify-content:flex-end; }
+    .btn { appearance:none; border:1px solid #ddd; background:#fff; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:700; }
+    .btn.primary { background:#1976d2; color:#fff; border-color:#1976d2; }
+    .error { color:#b71c1c; background:#fff5f5; border:1px solid #ffd6d6; padding:10px 12px; border-radius:12px; margin-bottom:8px; }
+    .image-preview { display:flex; align-items:center; justify-content:center; width:160px; height:160px; border-radius:12px; border:1px solid #ddd; overflow:hidden; background:#fafafa; margin:0 auto; }
+    .image-preview img { width:100%; height:100%; object-fit:cover; display:block; }
+    .cover-preview { width:100%; height:180px; border-radius:12px; border:1px solid #ddd; overflow:hidden; background:#fafafa; margin:0 auto; }
+    .cover-preview img { width:100%; height:100%; object-fit:cover; display:block; }
+    .change-text { text-align:center; font-size:13px; color:#444; margin-top:6px; }
+    .change-text label { cursor:pointer; text-decoration:underline; }
+    .file-input { display:none; }
+    .modal { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none; align-items:center; justify-content:center; z-index:1000; }
+    .modal.open { display:flex; }
+    .modal-card { background:#fff; border-radius:12px; width:min(92vw, 900px); max-height:88vh; display:flex; flex-direction:column; overflow:hidden; }
+    .modal-header { padding:10px 14px; border-bottom:1px solid #eee; font-weight:600; }
+    .modal-body { padding:12px; overflow:auto; }
+    .modal-actions { padding:10px 14px; border-top:1px solid #eee; display:flex; gap:10px; justify-content:flex-end; }
+    .btn-outline { background:transparent; color:#111; border:1px solid #ddd; padding:8px 12px; border-radius:10px; cursor:pointer; }
+  </style>
+  <link rel="stylesheet" href="https://unpkg.com/cropperjs@1.6.2/dist/cropper.min.css"/>
+{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="card-header">Editar comunidad</div>
+    <form class="card-body" method="post" action="{% url 'edit_community' community_uid %}" enctype="multipart/form-data">
+      {% csrf_token %}
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <div class="field">
+        <label for="name">Nombre</label>
+        <input id="name" name="name" type="text" maxlength="80" required value="{{ name }}" />
+      </div>
+      <div class="field">
+        <label for="description">Descripción</label>
+        <textarea id="description" name="description" maxlength="500">{{ description }}</textarea>
+      </div>
+
+      <!-- Imagen de comunidad (500x500) -->
+      <div class="field">
+        <label>Imagen de comunidad</label>
+        <div class="image-preview" aria-label="Vista previa de imagen de comunidad">
+          {% if image_url %}
+            <img id="communityPreview" src="{{ image_url }}" alt="Imagen de comunidad" />
+          {% else %}
+            <img id="communityPreview" src="data:image/svg+xml;utf8,&lt;svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'&gt;&lt;rect fill='%23eeeeee' width='100%' height='100%'/&gt;&lt;text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23888' font-size='14'&gt;Comunidad&lt;/text&gt;&lt;/svg&gt;" alt="Sin imagen" />
+          {% endif %}
+        </div>
+        <div class="change-text"><label for="image">Ingresar imagen</label></div>
+        <input id="image" class="file-input" name="image" type="file" accept="image/png,image/jpeg" />
+        <input type="hidden" name="image_cropped" id="image_cropped" />
+      </div>
+
+      <!-- Imagen de presentación (1500x500) -->
+      <div class="field">
+        <label>Imagen de presentación</label>
+        <div class="cover-preview" aria-label="Vista previa de imagen de presentación">
+          {% if cover_image_url %}
+            <img id="coverPreview" src="{{ cover_image_url }}" alt="Imagen de presentación" />
+          {% else %}
+            <img id="coverPreview" src="data:image/svg+xml;utf8,&lt;svg xmlns='http://www.w3.org/2000/svg' width='640' height='180'&gt;&lt;rect fill='%23eeeeee' width='100%' height='100%'/&gt;&lt;text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23888' font-size='14'&gt;Presentación&lt;/text&gt;&lt;/svg&gt;" alt="Sin imagen" />
+          {% endif %}
+        </div>
+        <div class="change-text"><label for="cover">Ingresar imagen</label></div>
+        <input id="cover" class="file-input" name="cover" type="file" accept="image/png,image/jpeg" />
+        <input type="hidden" name="cover_cropped" id="cover_cropped" />
+      </div>
+
+      <div class="actions">
+        <a class="btn" href="{% url 'community' community_uid %}">Cancelar</a>
+        <button class="btn primary" type="submit">Guardar cambios</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- Modal de recorte -->
+  <div id="cropperModal" class="modal" role="dialog" aria-modal="true" aria-label="Recortar imagen">
+    <div class="modal-card">
+      <div class="modal-header">Recortar imagen</div>
+      <div class="modal-body">
+        <img id="cropperImage" alt="Imagen a recortar" style="max-width:100%; display:block;" />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-outline" id="cropperCancel">Cancelar</button>
+        <button type="button" class="btn primary" id="cropperApply">Aplicar recorte</button>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+{% block scripts %}
+  <script src="https://unpkg.com/cropperjs@1.6.2/dist/cropper.min.js"></script>
+  <script>
+    (function(){
+      const modal = document.getElementById('cropperModal');
+      const imgEl = document.getElementById('cropperImage');
+      const btnApply = document.getElementById('cropperApply');
+      const btnCancel = document.getElementById('cropperCancel');
+      const fileCommunity = document.getElementById('image');
+      const fileCover = document.getElementById('cover');
+      const hiddenCommunity = document.getElementById('image_cropped');
+      const hiddenCover = document.getElementById('cover_cropped');
+      const previewCommunity = document.getElementById('communityPreview');
+      const previewCover = document.getElementById('coverPreview');
+
+      let cropper = null;
+      let currentKind = null; // 'community' | 'cover'
+
+      function openCropper(file, kind){
+        currentKind = kind;
+        if (!file || !/^image\/(png|jpeg)$/.test(file.type)) {
+          alert('El archivo debe ser PNG o JPG.');
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          imgEl.src = e.target.result;
+          if (cropper) { cropper.destroy(); cropper = null; }
+          modal.classList.add('open');
+          const aspectRatio = (kind === 'community') ? 1 : 3; // 500x500 or 1500x500
+          cropper = new Cropper(imgEl, {
+            aspectRatio,
+            viewMode: 1,
+            autoCropArea: 1,
+            movable: true,
+            zoomable: true,
+            scalable: false,
+            responsive: true,
+            background: false,
+          });
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function closeCropper(){
+        if (cropper) { cropper.destroy(); cropper = null; }
+        modal.classList.remove('open');
+        imgEl.src = '';
+        currentKind = null;
+      }
+
+      fileCommunity.addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) openCropper(f, 'community');
+      });
+      fileCover.addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) openCropper(f, 'cover');
+      });
+
+      btnCancel.addEventListener('click', closeCropper);
+      modal.addEventListener('click', (e) => { if (e.target === modal) closeCropper(); });
+
+      btnApply.addEventListener('click', () => {
+        if (!cropper || !currentKind) return;
+        const width = (currentKind === 'community') ? 500 : 1500;
+        const height = 500; // both end at height 500
+        const canvas = cropper.getCroppedCanvas({ width, height, imageSmoothingQuality: 'high' });
+        if (!canvas) { alert('No se pudo generar el recorte.'); return; }
+        canvas.toBlob((blob) => {
+          if (!blob) { alert('No se pudo exportar la imagen.'); return; }
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const dataUrl = reader.result;
+            if (currentKind === 'community') {
+              hiddenCommunity.value = dataUrl;
+              previewCommunity.src = dataUrl;
+            } else {
+              hiddenCover.value = dataUrl;
+              previewCover.src = dataUrl;
+            }
+            closeCropper();
+          };
+          reader.readAsDataURL(blob);
+        }, 'image/jpeg', 0.9);
+      });
+    })();
+  </script>
+{% endblock %}

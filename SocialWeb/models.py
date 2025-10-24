@@ -39,6 +39,8 @@ class User(StructuredNode):
 	# Social graph
 	following = RelationshipTo('User', 'FOLLOWS')
 	followers = RelationshipFrom('User', 'FOLLOWS')
+	# Communities
+	communities = RelationshipTo('Community', 'MEMBER_OF')
 
 	def __str__(self) -> str:  # pragma: no cover - helper only
 		return f"User(username={self.username})"
@@ -60,6 +62,9 @@ class Post(StructuredNode):
 	author = RelationshipTo('User', 'AUTHORED_BY')
 	comments = RelationshipTo('Comment', 'HAS_COMMENT')
 	liked_by = RelationshipFrom('User', 'LIKED_POST')
+	# Optional community link
+	community = RelationshipTo('Community', 'IN_COMMUNITY')
+	community_uid = StringProperty(required=False)
 
 	def __str__(self) -> str:  # pragma: no cover
 		return f"Post(title={self.title}, author={self.author_username})"
@@ -101,6 +106,25 @@ class Comment(StructuredNode):
 
 # Expose Notification at module level for imports
 Notification = Comment.Notification
+
+
+class Community(StructuredNode):
+	"""Community node representing user groups."""
+	uid = UniqueIdProperty()
+	name = StringProperty(required=True, index=True)
+	description = StringProperty(required=False)
+	image_url = StringProperty(required=False)  # community avatar
+	cover_image_url = StringProperty(required=False)  # presentation image
+	creator_username = StringProperty(required=True, index=True)
+	creator_uid = StringProperty(required=False, index=True)
+	created_at = DateTimeProperty(default_now=True, index=True)
+
+	# Relationships
+	members = RelationshipFrom('User', 'MEMBER_OF')
+	posts = RelationshipFrom('Post', 'IN_COMMUNITY')
+
+	def __str__(self) -> str:  # pragma: no cover
+		return f"Community(name={self.name})"
 
 
 class Message(StructuredNode):

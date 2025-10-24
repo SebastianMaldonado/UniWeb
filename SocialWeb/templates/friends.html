@@ -15,6 +15,13 @@
     .user-row { display:grid; grid-template-columns: 44px 1fr auto; gap:10px; align-items:center; padding:8px 10px; border:1px solid #eee; border-radius:10px; }
     .uimg { width:44px; height:44px; border-radius:999px; overflow:hidden; border:1px solid #eee; background:#f5f5f5; }
     .uimg img { width:100%; height:100%; object-fit:cover; display:block; }
+  /* Crown for community creator */
+  .uimg { position: relative; }
+  .crown { position:absolute; top:-6px; right:-6px; width:18px; height:18px; border-radius:999px; background:#ffd54f; color:#111; display:flex; align-items:center; justify-content:center; border:1px solid #e0b200; box-shadow:0 1px 2px rgba(0,0,0,0.1); }
+  .crown svg { width:12px; height:12px; display:block; }
+  /* Inline crown next to name */
+  .crown-inline { display:inline-block; margin-left:6px; color:#e0b200; vertical-align:middle; }
+  .crown-inline svg { width:14px; height:14px; display:inline-block; }
     .muted { color:#777; font-size:12px; }
     .col { display:grid; gap:10px; }
     .cols { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
@@ -152,7 +159,61 @@
 
       <!-- Comunidades -->
       <div class="section" data-section="communities" style="display:none;">
-        <div class="muted">Se implementará después</div>
+        <!-- Mis comunidades -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <div style="font-weight:700;">Mis comunidades</div>
+          <a href="{% url 'new_community' %}" class="follow-btn" style="border-color:#1976d2; color:#1976d2;">+ Crear comunidad</a>
+        </div>
+        <div class="list" style="margin-bottom:14px;">
+          {% if my_communities and my_communities|length > 0 %}
+            {% for c in my_communities %}
+              <a class="user-row" href="{% url 'community' c.uid %}" style="text-decoration:none; color:inherit;">
+                <div class="uimg">
+                  {% if c.image_url %}
+                    <img src="{{ c.image_url }}" alt="{{ c.name }}" />
+                  {% else %}
+                    <img alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='44' height='44'><rect fill='%23eeeeee' width='100%' height='100%'/></svg>" />
+                  {% endif %}
+                </div>
+                <div>
+                  <div style="font-weight:700;">{{ c.name }} {% if c.is_creator %}<span class="crown-inline" title="Creador" aria-label="Creador"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 7l4.5 3 4.5-6 4.5 6L21 7v10H3V7zm2 8h14v-6l-3.5 2.333L12 5.5 8.5 11.333 5 9v6z"/></svg></span>{% endif %}</div>
+                  <div class="muted">{{ c.member_count }} miembros</div>
+                </div>
+                <div></div>
+              </a>
+            {% endfor %}
+          {% else %}
+            <div class="muted">Aún no perteneces a ninguna comunidad</div>
+          {% endif %}
+        </div>
+
+        <!-- Descubre comunidades -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <div style="font-weight:700;">Descubre comunidades</div>
+          <div></div>
+        </div>
+        <div class="list">
+          {% if recommended_communities and recommended_communities|length > 0 %}
+            {% for c in recommended_communities %}
+              <a class="user-row" href="{% url 'community' c.uid %}" style="text-decoration:none; color:inherit;">
+                <div class="uimg">
+                  {% if c.image_url %}
+                    <img src="{{ c.image_url }}" alt="{{ c.name }}" />
+                  {% else %}
+                    <img alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='44' height='44'><rect fill='%23eeeeee' width='100%' height='100%'/></svg>" />
+                  {% endif %}
+                </div>
+                <div>
+                  <div style="font-weight:700;">{{ c.name }} {% if c.is_creator %}<span class="crown-inline" title="Creador" aria-label="Creador"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 7l4.5 3 4.5-6 4.5 6L21 7v10H3V7zm2 8h14v-6l-3.5 2.333L12 5.5 8.5 11.333 5 9v6z"/></svg></span>{% endif %}</div>
+                  <div class="muted">{{ c.member_count }} miembros • {{ c.friend_count }} amigos dentro • {{ c.likes_score }} likes tuyos</div>
+                </div>
+                <div></div>
+              </a>
+            {% endfor %}
+          {% else %}
+            <div class="muted">Aún no hay comunidades recomendadas</div>
+          {% endif %}
+        </div>
       </div>
     </div>
   </div>
@@ -216,6 +277,26 @@
           label.textContent = '@' + n.id;
           g.appendChild(label);
           svg.appendChild(g);
+        });
+      }
+
+      // Follow/unfollow buttons inside recommendations and popular sections
+      const panel = document.querySelector('.panel');
+      if (panel){
+        panel.addEventListener('click', async function(e){
+          const btn = e.target.closest('.follow-btn');
+          if (!btn) return;
+          const uname = btn.getAttribute('data-username');
+          if (!uname) return;
+          try{
+            const res = await fetch(`/user/${encodeURIComponent(uname)}/follow-toggle`, { method:'POST', headers:{ 'X-Requested-With':'XMLHttpRequest' } });
+            if(!res.ok) return;
+            const data = await res.json();
+            const following = !!data.following;
+            btn.setAttribute('data-following', following ? 'true' : 'false');
+            btn.textContent = following ? 'Dejar de seguir' : 'Seguir';
+            document.dispatchEvent(new CustomEvent('follow-changed', { detail: { username: uname, following } }));
+          }catch(err){ /* ignore */ }
         });
       }
     })();

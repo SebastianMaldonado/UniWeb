@@ -1,0 +1,198 @@
+{% extends 'base_app.html' %}
+{% block title %}UniWeb • Comunidad{% endblock %}
+{% block head_extra %}
+  <style>
+    main.app-content { background: #fff; }
+    /* Layout similar a /chat: sidebar + panel */
+    .community-page { display:grid; grid-template-columns: 280px 1fr; gap:12px; height: calc(100vh - 56px - 64px - 32px); }
+    .community-sidebar { border:1px solid #eee; border-radius:12px; background:#fff; overflow:auto; height:100%; padding:10px; }
+    .community-main { border:1px solid #eee; border-radius:12px; background:#fff; display:grid; grid-template-rows: auto auto 1fr; min-height:480px; height:100%; }
+    .header { display:flex; gap:10px; align-items:center; padding-bottom:8px; }
+    .avatar { width:48px; height:48px; border-radius:999px; overflow:hidden; border:1px solid #eee; background:#fafafa; }
+    .avatar img { width:100%; height:100%; object-fit:cover; display:block; }
+    .muted { color:#777; font-size:12px; }
+    .counts { padding:6px 0 10px; border-top:1px solid #f2f2f2; }
+    .list { display:grid; gap:8px; }
+    .members { padding-right:4px; }
+    .user-row { display:grid; grid-template-columns: 36px 1fr; gap:8px; align-items:center; padding:6px 4px; }
+    .uimg { width:36px; height:36px; border-radius:999px; overflow:hidden; border:1px solid #eee; background:#f5f5f5; }
+    .uimg img { width:100%; height:100%; object-fit:cover; display:block; }
+    .cover { height: 180px; border-bottom:1px solid #eee; border-radius:12px 12px 0 0; overflow:hidden; background:#f5f5f5; }
+    .cover img { width:100%; height:100%; object-fit:cover; display:block; }
+    .section { padding:10px; border-bottom:1px solid #f2f2f2; }
+    .posts { overflow:auto; padding:10px; }
+    /* Descripción con clamp a 3 líneas y toggle */
+    .desc-text { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+    .desc-text.expanded { -webkit-line-clamp:unset; display:block; }
+    .desc-toggle { appearance:none; border:1px solid #ddd; background:#fff; padding:6px 10px; border-radius:10px; cursor:pointer; font-weight:600; margin-top:8px; }
+    /* Join/Leave button */
+    .join-btn { appearance:none; border:1px solid #1976d2; background:#1976d2; color:#fff; padding:10px 12px; border-radius:10px; font-weight:700; cursor:pointer; width:100%; margin-top:10px; }
+    .join-btn.leave { background:#fff; color:#111; border-color:#ddd; }
+    /* Inline crown next to name */
+    .crown-inline { display:inline-block; margin-left:6px; color:#e0b200; vertical-align:middle; }
+    .crown-inline svg { width:14px; height:14px; display:inline-block; }
+  </style>
+{% endblock %}
+{% block content %}
+  <div class="community-page">
+    <!-- Columna izquierda -->
+    <aside class="community-sidebar">
+      <div class="header">
+        <div class="avatar">
+          {% if community.image_url %}
+            <img src="{{ community.image_url }}" alt="{{ community.name }}"/>
+          {% else %}
+            <img alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48'><rect fill='%23eeeeee' width='100%' height='100%'/></svg>" />
+          {% endif %}
+        </div>
+        <div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <strong>{{ community.name }}</strong>
+            {% if is_creator %}
+              <span class="crown-inline" title="Creador" aria-label="Creador">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M3 7l4.5 3 4.5-6 4.5 6L21 7v10H3V7zm2 8h14v-6l-3.5 2.333L12 5.5 8.5 11.333 5 9v6z"/>
+                </svg>
+              </span>
+            {% endif %}
+          </div>
+          {% if is_creator %}
+            <div style="margin-top:6px;">
+              <a class="btn-edit" href="{% url 'edit_community' community_uid %}" style="appearance:none; border:1px solid #ddd; background:#fff; padding:6px 10px; border-radius:10px; cursor:pointer; font-weight:600; text-decoration:none; color:#111; display:inline-block;">Editar</a>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+  <div id="membersCount" class="counts muted">{{ members_count }} miembros • {{ posts_count }} publicaciones</div>
+  <div id="membersList" class="members list">
+        {% for u in members %}
+          <div class="user-row">
+            <div class="uimg">
+              {% if u.profile_image_url %}
+                <img src="{{ u.profile_image_url }}" alt="{{ u.username }}" />
+              {% else %}
+                <img alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='36' height='36'><rect fill='%23eeeeee' width='100%' height='100%'/></svg>" />
+              {% endif %}
+            </div>
+            <div>
+              <a href="/user-profile/{{ u.username }}">@{{ u.username }}</a>
+            </div>
+          </div>
+        {% empty %}
+          <div class="muted">Sin miembros</div>
+        {% endfor %}
+      </div>
+      <button id="joinToggleBtn" class="join-btn {% if is_member %}leave{% endif %}" data-uid="{{ community_uid }}" data-joined="{{ is_member|yesno:'true,false' }}">{% if is_member %}Salirse{% else %}Unirse{% endif %}</button>
+    </aside>
+
+    <!-- Columna derecha -->
+    <section class="community-main">
+      <div class="cover">
+        {% if community.cover_image_url %}
+          <img src="{{ community.cover_image_url }}" alt="presentación" />
+        {% endif %}
+      </div>
+      <div class="section">
+        <div class="muted" style="margin-bottom:6px;">Descripción</div>
+        <div id="descWrap">
+          <div id="descText" class="desc-text">{{ community.description|default:'Sin descripción' }}</div>
+          <button id="descToggle" class="desc-toggle" type="button" style="display:none;">Mostrar más</button>
+        </div>
+      </div>
+      <div class="posts">
+        {% if posts and posts|length > 0 %}
+          {% for post in posts %}
+            {% include 'post_card.html' with post=post %}
+          {% endfor %}
+        {% else %}
+          <div class="muted">No hay publicaciones en esta comunidad</div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function(){
+  const textEl = document.getElementById('descText');
+  const btn = document.getElementById('descToggle');
+  if (!textEl || !btn) return;
+  function needsClamp(){
+    return textEl.scrollHeight > textEl.clientHeight + 1;
+  }
+  function init(){
+    // Defer to ensure styles are applied
+    if (needsClamp()){
+      btn.style.display = '';
+      btn.textContent = 'Mostrar más';
+      btn.setAttribute('data-state','clamped');
+    } else {
+      btn.style.display = 'none';
+    }
+  }
+  // Run after layout
+  window.requestAnimationFrame ? window.requestAnimationFrame(init) : setTimeout(init, 0);
+
+  btn.addEventListener('click', function(){
+    const state = btn.getAttribute('data-state') || 'clamped';
+    if (state === 'clamped'){
+      textEl.classList.add('expanded');
+      btn.textContent = 'Mostrar menos';
+      btn.setAttribute('data-state','expanded');
+    } else {
+      textEl.classList.remove('expanded');
+      btn.textContent = 'Mostrar más';
+      btn.setAttribute('data-state','clamped');
+    }
+  });
+})();
+</script>
+<script>
+(function(){
+  const btn = document.getElementById('joinToggleBtn');
+  const membersList = document.getElementById('membersList');
+  const membersCountEl = document.getElementById('membersCount');
+  if (!btn || !membersList || !membersCountEl) return;
+
+  function renderMembers(list){
+    if (!list || !list.length){
+      membersList.innerHTML = '<div class="muted">Sin miembros</div>';
+      return;
+    }
+    membersList.innerHTML = list.map(u => `
+      <div class="user-row">
+        <div class="uimg">
+          ${u.profile_image_url ? `<img src="${u.profile_image_url}" alt="${u.username}" />` : `<img alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='36' height='36'><rect fill='%23eeeeee' width='100%' height='100%'/></svg>" />`}
+        </div>
+        <div>
+          <a href="/user-profile/${u.username}">@${u.username}</a>
+        </div>
+      </div>`).join('');
+  }
+
+  btn.addEventListener('click', async function(){
+    const uid = btn.getAttribute('data-uid');
+    try{
+      const res = await fetch(`/community/${encodeURIComponent(uid)}/join-toggle`, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!res.ok) return;
+      const data = await res.json();
+      // Update button state
+      const joined = !!data.joined;
+      btn.setAttribute('data-joined', joined ? 'true' : 'false');
+      btn.textContent = joined ? 'Salirse' : 'Unirse';
+      btn.classList.toggle('leave', joined);
+      // Update members UI
+      if (typeof data.members_count === 'number'){
+        const text = membersCountEl.textContent || '';
+        const parts = text.split('•');
+        const postsPart = parts.length > 1 ? parts[1].trim() : '';
+        membersCountEl.textContent = `${data.members_count} miembros${postsPart ? ' • ' + postsPart : ''}`;
+      }
+      if (Array.isArray(data.members)){
+        renderMembers(data.members);
+      }
+    } catch(e){ /* ignore */ }
+  });
+})();
+</script>
+{% endblock %}

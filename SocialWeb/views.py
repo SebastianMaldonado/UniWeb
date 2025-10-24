@@ -15,7 +15,7 @@ from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 from neomodel import db
 
-from .models import User, Post, Comment, Notification, Message
+from .models import User, Post, Comment, Notification, Message, Community
 
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
@@ -474,12 +474,85 @@ def friends_view(request: HttpRequest) -> HttpResponse:
 		for tgt in following_map.get(src, set()):
 			links.append({"source": src, "target": tgt})
 
+	# Recommend communities: priority (friends in community, likes to posts in community, popularity)
+	recommended_communities = []
+	# My communities (for listing in friends > communities)
+	my_communities_ctx = []
+	try:
+		my_comms = list(me.communities.all()) if me else []
+	except Exception:
+		my_comms = []
+	for mc in my_comms:
+		try:
+			mcount = len(list(mc.members.all()))
+		except Exception:
+			mcount = 0
+		my_communities_ctx.append({
+			"uid": mc.uid,
+			"name": mc.name,
+			"image_url": getattr(mc, 'image_url', '') or '',
+			"is_creator": bool(getattr(mc, 'creator_username', None) == me_username),
+			"member_count": mcount,
+		})
+	# Precompute my following set and liked post ids
+	try:
+		my_following_set = set(u.username for u in (me.following.all() if me else []))
+	except Exception:
+		my_following_set = set()
+	liked_post_ids = set()
+	if me_username:
+		try:
+			rows, _ = db.cypher_query(
+				"MATCH (:User {username:$me})-[:LIKED_POST]->(p:Post) RETURN collect(p.uid)", {"me": me_username}
+			)
+			if rows and rows[0] and rows[0][0]:
+				liked_post_ids = set(rows[0][0])
+		except Exception:
+			liked_post_ids = set()
+	# Load communities
+	try:
+		communities = list(Community.nodes)
+	except Exception:
+		communities = []
+	for c in communities:
+		# members
+		try:
+			members = [u.username for u in c.members.all()]
+		except Exception:
+			members = []
+		# Exclude communities the current user already belongs to from recommendations
+		if me_username and (me_username in members):
+			continue
+		friend_count = len(my_following_set & set(members))
+		# likes to posts in this community
+		likes_score = 0
+		try:
+			cposts = list(c.posts.all())
+		except Exception:
+			cposts = []
+		for p in cposts:
+			if getattr(p, 'uid', None) in liked_post_ids:
+				likes_score += 1
+		popular_count = len(members)
+		recommended_communities.append({
+			"uid": c.uid,
+			"name": c.name,
+			"image_url": getattr(c, 'image_url', '') or '',
+			"is_creator": bool(getattr(c, 'creator_username', None) == me_username),
+			"friend_count": friend_count,
+			"likes_score": likes_score,
+			"member_count": popular_count,
+		})
+	recommended_communities.sort(key=lambda d: (d.get('friend_count',0), d.get('likes_score',0), d.get('member_count',0)), reverse=True)
+
 	return render(request, "friends.html", {
 		"following": following_ctx,
 		"followers": followers_ctx,
 		"mutuals": mutuals_ctx,
 		"recommended": recommended_list,
 		"popular": popular_list,
+		"my_communities": my_communities_ctx,
+		"recommended_communities": recommended_communities,
 		"graph_nodes": json.dumps(nodes),
 		"graph_links": json.dumps(links),
 	})
@@ -495,9 +568,16 @@ def new_post_view(request: HttpRequest) -> HttpResponse:
 	error = None
 	ok = False
 
+	# Load communities the user is a member of (for selector)
+	try:
+		my_communities = list(me.communities.all())
+	except Exception:
+		my_communities = []
+
 	if request.method == "POST":
 		title = (request.POST.get("title", "") or "").strip()
 		description = (request.POST.get("description", "") or "").strip()
+		community_uid = (request.POST.get("community_uid", "") or "").strip()
 		# clamp description
 		if len(description) > 500:
 			description = description[:500]
@@ -560,10 +640,275 @@ def new_post_view(request: HttpRequest) -> HttpResponse:
 				post.author.connect(me)
 			except Exception:
 				pass
+			# Link to community if provided and user is a member
+			if community_uid:
+				try:
+					com = Community.nodes.get(uid=community_uid)
+					# ensure membership
+					is_member = any(c.uid == community_uid for c in my_communities)
+					if is_member:
+						try:
+							post.community.connect(com)
+						except Exception:
+							pass
+						try:
+							post.community_uid = com.uid
+							post.save()
+						except Exception:
+							pass
+				except Exception:
+					pass
 			ok = True
 			return redirect("home")
 
-	return render(request, "new_post.html", {"error": error, "ok": ok})
+	# Build communities context for selector
+	comms_ctx = [{
+		"uid": c.uid,
+		"name": c.name,
+		"image_url": getattr(c, "image_url", "") or "",
+	} for c in my_communities]
+
+	return render(request, "new_post.html", {"error": error, "ok": ok, "communities": comms_ctx})
+
+
+def new_community_view(request: HttpRequest) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe: return maybe
+	me = _get_user_by_username(_get_logged_in_username(request))
+	if not me:
+		return redirect("login")
+
+	error = None
+	if request.method == 'POST':
+		name = (request.POST.get('name','') or '').strip()
+		description = (request.POST.get('description','') or '').strip()
+		img_file = request.FILES.get('image')
+		cover_file = request.FILES.get('cover')
+		img_cropped = (request.POST.get('image_cropped','') or '').strip()
+		cover_cropped = (request.POST.get('cover_cropped','') or '').strip()
+		if not name:
+			error = 'El nombre es obligatorio.'
+		if not error:
+			def _save(file_obj, folder: str) -> str:
+				if not file_obj: return ''
+				namef = get_valid_filename(file_obj.name)
+				path = default_storage.save(f"communities/{folder}/{namef}", file_obj)
+				url = default_storage.url(path)
+				return settings.MEDIA_URL + path if not url.startswith('http') else url
+			def _save_data_url(data_url: str, folder: str, name: str = 'img') -> str:
+				m = re.match(r"^data:image/(png|jpeg);base64,(.+)$", data_url)
+				if not m:
+					return ''
+				ext = 'png' if m.group(1) == 'png' else 'jpg'
+				b64data = m.group(2)
+				content = ContentFile(b64decode(b64data))
+				path = default_storage.save(f"communities/{folder}/{name}.{ext}", content)
+				url = default_storage.url(path)
+				return settings.MEDIA_URL + path if not url.startswith('http') else url
+			# Prefer cropped data when provided
+			image_url = _save_data_url(img_cropped, 'images', 'community') if img_cropped else _save(img_file, 'images')
+			cover_url = _save_data_url(cover_cropped, 'covers', 'cover') if cover_cropped else _save(cover_file, 'covers')
+			c = Community(
+				name=name,
+				description=description or None,
+				image_url=image_url or None,
+				cover_image_url=cover_url or None,
+				creator_username=me.username,
+				creator_uid=me.uid,
+			).save()
+			# Connect creator as member
+			try:
+				c.members.connect(me)
+			except Exception:
+				pass
+			try:
+				me.communities.connect(c)
+			except Exception:
+				pass
+			return redirect('community', uid=c.uid)
+	return render(request, 'new_community.html', { 'error': error })
+
+
+def community_view(request: HttpRequest, uid: str) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe: return maybe
+	try:
+		c = Community.nodes.get(uid=uid)
+	except Community.DoesNotExist:
+		return redirect('friends')
+	# members
+	try:
+		members = list(c.members.all())
+	except Exception:
+		members = []
+	# posts
+	try:
+		cposts = list(c.posts.all())
+	except Exception:
+		cposts = []
+	# Prepare posts context using existing serializer
+	me_username = _get_logged_in_username(request)
+	me = _get_user_by_username(me_username) if me_username else None
+	try:
+		me_following = set(u.username for u in (me.following.all() if me else []))
+	except Exception:
+		me_following = set()
+	posts_ctx = [_serialize_post_card(p, following_usernames=me_following, me_username=me_username) for p in cposts]
+
+	is_creator = bool(me_username and getattr(c, 'creator_username', None) == me_username)
+	# Determine if current user is member
+	try:
+		is_member = any(u.username == me_username for u in members) if me_username else False
+	except Exception:
+		is_member = False
+	return render(request, 'community.html', {
+		'community': {
+			'name': c.name,
+			'image_url': getattr(c, 'image_url', '') or '',
+			'cover_image_url': getattr(c, 'cover_image_url', '') or '',
+			'description': getattr(c, 'description', '') or '',
+		},
+		'members': [{ 'username': u.username, 'profile_image_url': getattr(u, 'profile_image_url', '') or '' } for u in members],
+		'members_count': len(members),
+		'posts_count': len(cposts),
+		'posts': posts_ctx,
+		'community_uid': c.uid,
+		'is_creator': is_creator,
+		'is_member': is_member,
+	})
+
+
+@csrf_exempt
+def community_join_toggle(request: HttpRequest, uid: str) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe:
+		return maybe
+	if request.method != 'POST':
+		return HttpResponse(status=405)
+	me_username = _get_logged_in_username(request)
+	me = _get_user_by_username(me_username) if me_username else None
+	if not me:
+		return HttpResponse(status=403)
+	try:
+		c = Community.nodes.get(uid=uid)
+	except Community.DoesNotExist:
+		return HttpResponse(status=404)
+
+	# Check membership
+	try:
+		current_members = list(c.members.all())
+	except Exception:
+		current_members = []
+	already_member = any(u.username == me.username for u in current_members)
+
+	joined = False
+	# Toggle membership
+	try:
+		if already_member:
+			# disconnect
+			try:
+				c.members.disconnect(me)
+			except Exception:
+				pass
+			try:
+				me.communities.disconnect(c)
+			except Exception:
+				pass
+			joined = False
+		else:
+			try:
+				c.members.connect(me)
+			except Exception:
+				pass
+			try:
+				me.communities.connect(c)
+			except Exception:
+				pass
+			joined = True
+	except Exception:
+		pass
+
+	# Rebuild members list for response
+	try:
+		updated_members = list(c.members.all())
+	except Exception:
+		updated_members = []
+	members_ctx = [{
+		'username': u.username,
+		'profile_image_url': getattr(u, 'profile_image_url', '') or ''
+	} for u in updated_members]
+	payload = {
+		'joined': joined,
+		'members': members_ctx,
+		'members_count': len(members_ctx),
+	}
+	return HttpResponse(json.dumps(payload), content_type='application/json')
+
+
+def edit_community_view(request: HttpRequest, uid: str) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe: return maybe
+	me = _get_user_by_username(_get_logged_in_username(request))
+	if not me:
+		return redirect('login')
+	try:
+		c = Community.nodes.get(uid=uid)
+	except Community.DoesNotExist:
+		return redirect('friends')
+	# Only creator can edit
+	if getattr(c, 'creator_username', None) != me.username:
+		return redirect('community', uid=uid)
+
+	error = None
+	if request.method == 'POST':
+		name = (request.POST.get('name','') or '').strip()
+		description = (request.POST.get('description','') or '').strip()
+		img_file = request.FILES.get('image')
+		cover_file = request.FILES.get('cover')
+		img_cropped = (request.POST.get('image_cropped','') or '').strip()
+		cover_cropped = (request.POST.get('cover_cropped','') or '').strip()
+		if not name:
+			error = 'El nombre es obligatorio.'
+		if not error:
+			def _save(file_obj, folder: str) -> str:
+				if not file_obj: return ''
+				namef = get_valid_filename(file_obj.name)
+				path = default_storage.save(f"communities/{folder}/{namef}", file_obj)
+				url = default_storage.url(path)
+				return settings.MEDIA_URL + path if not url.startswith('http') else url
+			def _save_data_url(data_url: str, folder: str, name: str = 'img') -> str:
+				m = re.match(r"^data:image/(png|jpeg);base64,(.+)$", data_url)
+				if not m:
+					return ''
+				ext = 'png' if m.group(1) == 'png' else 'jpg'
+				b64data = m.group(2)
+				content = ContentFile(b64decode(b64data))
+				path = default_storage.save(f"communities/{folder}/{name}.{ext}", content)
+				url = default_storage.url(path)
+				return settings.MEDIA_URL + path if not url.startswith('http') else url
+			# Determine new or existing image urls
+			new_image_url = _save_data_url(img_cropped, 'images', 'community') if img_cropped else _save(img_file, 'images')
+			new_cover_url = _save_data_url(cover_cropped, 'covers', 'cover') if cover_cropped else _save(cover_file, 'covers')
+			# Apply updates
+			c.name = name
+			c.description = description or None
+			if new_image_url:
+				c.image_url = new_image_url
+			if new_cover_url:
+				c.cover_image_url = new_cover_url
+			c.save()
+			return redirect('community', uid=c.uid)
+
+	# GET - render form with current values
+	context = {
+		'error': error,
+		'name': c.name,
+		'description': getattr(c, 'description', '') or '',
+		'image_url': getattr(c, 'image_url', '') or '',
+		'cover_image_url': getattr(c, 'cover_image_url', '') or '',
+		'community_uid': c.uid,
+	}
+	return render(request, 'edit_community.html', context)
 
 
 def chat_view(request: HttpRequest) -> HttpResponse:

@@ -79,7 +79,7 @@
       {% endif %}
     </section>
 
-    <!-- Follow button for other users -->
+    <!-- Follow/Edit section depending on ownership -->
     {% if not is_self %}
     <section class="follow-section">
       {% if mutual_count and mutual_count > 0 %}
@@ -87,6 +87,10 @@
       {% endif %}
       <button id="profileFollowBtn" class="{% if is_following %}follow-secondary{% else %}follow-primary{% endif %}" data-username="{{ username }}" data-following="{{ is_following|yesno:'true,false' }}">{% if is_following %}Dejar de seguir{% else %}Seguir{% endif %}</button>
       <a class="message-btn" href="{% url 'chat' %}?user={{ username }}">Enviar mensaje</a>
+    </section>
+    {% else %}
+    <section class="follow-section">
+      <a class="follow-secondary" href="{% url 'edit_profile' %}">Editar perfil</a>
     </section>
     {% endif %}
 

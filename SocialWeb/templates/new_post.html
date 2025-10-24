@@ -80,6 +80,7 @@
           <button class="tab" data-tab="images" type="button">Imágenes</button>
           <button class="tab" data-tab="links" type="button">Enlaces</button>
           <button class="tab" data-tab="tags" type="button">Temas</button>
+          <button class="tab" data-tab="community" type="button">Comunidad</button>
         </div>
 
         <!-- Panels -->
@@ -125,6 +126,22 @@
           <div id="tagsList" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
         </div>
 
+        <div class="panel" id="panel-community">
+          <div class="field">
+            <label for="community">Seleccionar comunidad</label>
+            {% if communities and communities|length > 0 %}
+              <select id="community" name="community_uid" style="padding:10px 12px; border:1px solid #ddd; border-radius:10px;">
+                <option value="">(Sin comunidad)</option>
+                {% for c in communities %}
+                  <option value="{{ c.uid }}">{{ c.name }}</option>
+                {% endfor %}
+              </select>
+            {% else %}
+              <div class="error" style="margin:0;">No perteneces a ninguna comunidad. Crea una en Amigos → Comunidades.</div>
+            {% endif %}
+          </div>
+        </div>
+
         <div class="actions">
           <button class="btn" type="button" id="cancelBtn" onclick="location.href='/home'">Cancelar</button>
           <button class="btn primary" type="submit">Publicar</button>
@@ -163,6 +180,7 @@
         images: document.getElementById('panel-images'),
         links: document.getElementById('panel-links'),
         tags: document.getElementById('panel-tags'),
+        community: document.getElementById('panel-community'),
       };
       tabs.forEach(t => t.addEventListener('click', () => {
         tabs.forEach(x => x.classList.remove('active'));
