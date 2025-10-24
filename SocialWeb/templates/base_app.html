@@ -21,6 +21,7 @@
     .icon-btn:hover { border-color: var(--red); }
     .icon { width: 18px; height: 18px; display: inline-block; }
     .icon svg { width: 18px; height: 18px; }
+  .bottom-btn .icon { position: relative; }
   .notif-dot { position:absolute; top:-2px; right:-2px; width:10px; height:10px; background:#e53935; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,0.06); }
 
   main.app-content { flex: 1; background: var(--soft); padding-bottom: 72px; }
@@ -33,6 +34,7 @@
     }
     .bottom-btn { display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--black); text-decoration: none; font-size: 13px; }
     .bottom-btn:hover { color: var(--red); }
+  .msg-dot { position:absolute; top:-4px; right:-4px; width:10px; height:10px; background:#e53935; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,0.06); }
   </style>
 </head>
 <body>
@@ -106,6 +108,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15a4 4 0 01-4 4H7l-4 4V7a4 4 0 014-4h10a4 4 0 014 4z"/>
           </svg>
+          {% if has_unread_messages %}<span class="msg-dot" aria-hidden="true"></span>{% endif %}
         </span>
         <span>Mensajes</span>
       </a>

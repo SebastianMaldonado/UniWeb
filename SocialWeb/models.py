@@ -101,3 +101,19 @@ class Comment(StructuredNode):
 
 # Expose Notification at module level for imports
 Notification = Comment.Notification
+
+
+class Message(StructuredNode):
+	"""Direct 1:1 message between users."""
+	uid = UniqueIdProperty()
+	sender_username = StringProperty(required=True, index=True)
+	sender_uid = StringProperty(required=False, index=True)
+	receiver_username = StringProperty(required=True, index=True)
+	receiver_uid = StringProperty(required=False, index=True)
+	text = StringProperty(required=False)
+	image_url = StringProperty(required=False)
+	seen = BooleanProperty(default=False)
+	created_at = DateTimeProperty(default_now=True, index=True)
+
+	def __str__(self) -> str:  # pragma: no cover
+		return f"Message(from={self.sender_username}, to={self.receiver_username}, text={(self.text or '')[:20]!r})"

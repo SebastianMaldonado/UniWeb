@@ -14,7 +14,7 @@ from django.utils.text import get_valid_filename
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 
-from .models import User, Post, Comment, Notification
+from .models import User, Post, Comment, Notification, Message
 
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
@@ -364,7 +364,153 @@ def new_post_view(request: HttpRequest) -> HttpResponse:
 def chat_view(request: HttpRequest) -> HttpResponse:
 	maybe = _login_required(request)
 	if maybe: return maybe
-	return render(request, "chat.html")
+	me_username = _get_logged_in_username(request)
+	me = _get_user_by_username(me_username)
+	# Build following list (left sidebar)
+	def _ago(dt) -> str:
+		try:
+			from datetime import datetime, timezone
+			now = datetime.now(timezone.utc) if getattr(dt, 'tzinfo', None) else datetime.utcnow()
+			diff = now - dt
+			seconds = int(diff.total_seconds())
+			minutes = seconds // 60
+			hours = minutes // 60
+			days = hours // 24
+			if days > 0:
+				return f"{days}d"
+			if hours > 0:
+				return f"{hours}h"
+			return f"{max(1, minutes)}m"
+		except Exception:
+			return ""
+
+	try:
+		following_users = list(me.following.all()) if me else []
+	except Exception:
+		following_users = []
+	following_ctx = []
+	for u in following_users:
+		unread_count = 0
+		last_ago = ""
+		try:
+			unread = list(Message.nodes.filter(sender_username=u.username, receiver_username=me_username, seen=False))
+			unread_count = len(unread)
+			if unread:
+				# latest by created_at
+				unread.sort(key=lambda m: getattr(m, 'created_at', None) or 0, reverse=True)
+				last_dt = getattr(unread[0], 'created_at', None)
+				if last_dt:
+					last_ago = _ago(last_dt)
+		except Exception:
+			pass
+		following_ctx.append({
+			"username": u.username,
+			"profile_image_url": getattr(u, "profile_image_url", "") or "",
+			"unread_count": unread_count,
+			"last_unread_ago": last_ago,
+		})
+	# Optional preselected user via query param
+	sel_username = (request.GET.get('user', '') or '').strip()
+	sel_user = _get_user_by_username(sel_username) if sel_username else None
+	sel_ctx = None
+	if sel_user:
+		sel_ctx = {
+			"username": sel_user.username,
+			"profile_image_url": getattr(sel_user, "profile_image_url", "") or "",
+		}
+	return render(request, "chat.html", {
+		"following": following_ctx,
+		"following_json": json.dumps(following_ctx),
+		"selected": sel_ctx,
+		"selected_username": sel_ctx["username"] if sel_ctx else "",
+	})
+
+
+def _serialize_message(m: Message, me_username: str) -> dict:
+	return {
+		"uid": m.uid,
+		"sender_username": m.sender_username,
+		"receiver_username": m.receiver_username,
+		"text": m.text or "",
+		"image_url": m.image_url or "",
+		"created_at": m.created_at.isoformat() if getattr(m, 'created_at', None) else '',
+		"is_me": (m.sender_username == me_username),
+	}
+
+
+def chat_messages(request: HttpRequest, username: str) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe:
+		return maybe
+	me_username = _get_logged_in_username(request)
+	if not me_username:
+		return HttpResponse(status=403)
+	# Ensure target exists
+	target = _get_user_by_username(username)
+	if not target:
+		return HttpResponse(status=404)
+	# Fetch both directions and merge
+	try:
+		a = list(Message.nodes.filter(sender_username=me_username, receiver_username=username))
+	except Exception:
+		a = []
+	try:
+		b = list(Message.nodes.filter(sender_username=username, receiver_username=me_username))
+	except Exception:
+		b = []
+	all_msgs = a + b
+	all_msgs.sort(key=lambda m: getattr(m, 'created_at', None) or 0)
+	# Mark messages to me as seen
+	for m in all_msgs:
+		try:
+			if getattr(m, 'receiver_username', None) == me_username and not getattr(m, 'seen', False):
+				m.seen = True
+				m.save()
+		except Exception:
+			pass
+	return HttpResponse(json.dumps({
+		"messages": [_serialize_message(m, me_username) for m in all_msgs]
+	}), content_type="application/json")
+
+
+@csrf_exempt
+def chat_send(request: HttpRequest, username: str) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe:
+		return maybe
+	if request.method != 'POST':
+		return HttpResponse(status=405)
+	me_username = _get_logged_in_username(request)
+	me = _get_user_by_username(me_username)
+	if not me:
+		return HttpResponse(status=403)
+	target = _get_user_by_username(username)
+	if not target:
+		return HttpResponse(status=404)
+	text = (request.POST.get('text', '') or '').strip()
+	if len(text) > 2000:
+		text = text[:2000]
+	image_url = ''
+	# Optional image upload
+	if 'image' in request.FILES:
+		try:
+			img = request.FILES['image']
+			name = f"chat/{me_username}_to_{username}_" + get_valid_filename(img.name)
+			saved = default_storage.save(name, img)
+			image_url = settings.MEDIA_URL + saved
+		except Exception:
+			image_url = ''
+	if not text and not image_url:
+		return HttpResponse(json.dumps({"error": "Mensaje o imagen requerido"}), content_type="application/json", status=400)
+	m = Message(
+		sender_username=me.username,
+		sender_uid=me.uid,
+		receiver_username=target.username,
+		receiver_uid=target.uid,
+		text=text or None,
+		image_url=image_url or None,
+	).save()
+	return HttpResponse(json.dumps({"message": _serialize_message(m, me_username)}), content_type="application/json")
 
 
 def profile_view(request: HttpRequest) -> HttpResponse:

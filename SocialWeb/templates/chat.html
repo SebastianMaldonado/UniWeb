@@ -1,5 +1,180 @@
 {% extends 'base_app.html' %}
 {% block title %}UniWeb • Chat{% endblock %}
 {% block content %}
-  <!-- Chat - vacío por ahora -->
+  <style>
+    /* Altura fija del área de chat: viewport - topbar (56) - bottombar (64) - padding vertical de content-inner (32) */
+    .chat-page { display:grid; grid-template-columns: 280px 1fr; gap:12px; height: calc(100vh - 56px - 64px - 32px); }
+    .chat-sidebar { border:1px solid #eee; border-radius:12px; background:#fff; overflow:auto; height: 100%; }
+    .chat-main { border:1px solid #eee; border-radius:12px; background:#fff; display:grid; grid-template-rows: auto 1fr auto; min-height: 480px; height: 100%; }
+  .chat-user { display:grid; grid-template-columns: 40px 1fr auto; gap:10px; align-items:center; padding:10px 12px; cursor:pointer; text-decoration:none; color:#111; }
+    .chat-user + .chat-user { border-top:1px solid #f3f3f3; }
+    .chat-user:hover { background:#fafafa; }
+    .cu-img { width:40px; height:40px; border-radius:999px; overflow:hidden; border:1px solid #eee; background:#f5f5f5; }
+    .cu-img img { width:100%; height:100%; object-fit:cover; display:block; }
+  .cu-meta { display:flex; flex-direction:column; }
+  .cu-row { display:flex; align-items:center; gap:6px; }
+  .badge { min-width:18px; height:18px; padding:0 6px; border-radius:999px; background:#e53935; color:#fff; font-size:12px; display:inline-flex; align-items:center; justify-content:center; }
+  .ago { color:#777; font-size:12px; }
+    .chat-header { display:flex; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid #eee; }
+    .ch-img { width:40px; height:40px; border-radius:999px; overflow:hidden; border:1px solid #eee; background:#f5f5f5; }
+    .ch-img img { width:100%; height:100%; object-fit:cover; display:block; }
+  .chat-body { padding:12px; overflow:auto; display:flex; flex-direction:column; gap:8px; }
+    .msg { max-width: 70%; padding:8px 10px; border-radius:12px; border:1px solid #eee; }
+    .msg.me { align-self:flex-end; background:#fef4f4; border-color:#f5b5b5; }
+    .msg.them { align-self:flex-start; background:#f8f8f8; }
+    .msg img { max-width: 240px; border-radius:8px; display:block; margin-top:6px; }
+  .chat-footer { padding:10px 12px; border-top:1px solid #eee; display:flex; gap:8px; align-items:center; }
+    .chat-footer input[type="text"] { flex:1; padding:10px 12px; border:1px solid #ddd; border-radius:10px; }
+    .chat-footer button, .chat-footer label { appearance:none; border:1px solid #ddd; background:#fff; padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600; }
+    .hidden { display:none; }
+  .preview-thumb { width:28px; height:28px; object-fit:cover; border-radius:6px; border:1px solid #ddd; }
+  .img-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center; z-index:3000; }
+  .img-overlay.open { display:flex; }
+  .img-overlay .inner { position:relative; }
+  .img-overlay img { max-width:92vw; max-height:92vh; border-radius:8px; box-shadow:0 20px 60px rgba(0,0,0,0.4); }
+  .img-overlay .close { position:absolute; top:-10px; right:-10px; width:32px; height:32px; border-radius:999px; background:#fff; border:1px solid #ddd; display:flex; align-items:center; justify-content:center; cursor:pointer; font-weight:700; }
+  </style>
+
+  <div class="chat-page">
+    <aside class="chat-sidebar">
+      {% if following and following|length > 0 %}
+        {% for u in following %}
+          <a class="chat-user" href="/chat?user={{ u.username }}">
+            <div class="cu-img">
+              {% if u.profile_image_url %}
+                <img src="{{ u.profile_image_url }}" alt="{{ u.username }}" />
+              {% else %}
+                <img alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><rect fill='%23eeeeee' width='100%' height='100%'/></svg>" />
+              {% endif %}
+            </div>
+            <div class="cu-meta">
+              <div class="cu-row"><strong>@{{ u.username }}</strong>{% if u.last_unread_ago %}<span class="ago">• {{ u.last_unread_ago }}</span>{% endif %}</div>
+            </div>
+            <div>
+              {% if u.unread_count and u.unread_count > 0 %}
+                <span class="badge">{{ u.unread_count }}</span>
+              {% endif %}
+            </div>
+          </a>
+        {% endfor %}
+      {% else %}
+        <div style="padding:12px; color:#777;">No sigues a nadie aún</div>
+      {% endif %}
+    </aside>
+
+    <section class="chat-main">
+      {% if selected %}
+      <div class="chat-header">
+        <div class="ch-img">
+          {% if selected.profile_image_url %}
+            <img src="{{ selected.profile_image_url }}" alt="{{ selected.username }}" />
+          {% else %}
+            <img alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><rect fill='%23eeeeee' width='100%' height='100%'/></svg>" />
+          {% endif %}
+        </div>
+        <strong>@{{ selected.username }}</strong>
+      </div>
+      <div class="chat-body" id="chatBody"></div>
+      <div class="chat-footer">
+        <input id="msgText" type="text" placeholder="Escribe un mensaje" />
+        <input id="msgImage" class="hidden" type="file" accept="image/*" />
+        <img id="imgPreview" class="preview-thumb hidden" alt="" />
+        <label for="msgImage">＋</label>
+        <button id="sendBtn" type="button">Enviar</button>
+      </div>
+      {% else %}
+      <div style="display:flex; align-items:center; justify-content:center; color:#777;">Selecciona un usuario para chatear</div>
+      {% endif %}
+    </section>
+  </div>
+
+  {% if selected %}
+  <div id="imgOverlay" class="img-overlay"><div class="inner"><img alt="" id="overlayImg" /><button id="overlayClose" class="close" type="button">×</button></div></div>
+  <script>
+  (function(){
+    const other = '{{ selected_username }}';
+    const chatBody = document.getElementById('chatBody');
+    const textEl = document.getElementById('msgText');
+    const fileEl = document.getElementById('msgImage');
+  const sendBtn = document.getElementById('sendBtn');
+  const previewEl = document.getElementById('imgPreview');
+  const overlay = document.getElementById('imgOverlay');
+  const overlayImg = document.getElementById('overlayImg');
+  const overlayClose = document.getElementById('overlayClose');
+
+    async function load(){
+      try{
+        const res = await fetch(`/chat/messages/${encodeURIComponent(other)}`);
+        if(!res.ok) return;
+        const data = await res.json();
+        render(data.messages || []);
+        chatBody.scrollTop = chatBody.scrollHeight;
+      }catch(e){}
+    }
+
+    function esc(s){ return (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+    function render(msgs){
+      chatBody.innerHTML = msgs.map(m => {
+        const side = m.is_me ? 'me' : 'them';
+        const img = m.image_url ? `<img src="${esc(m.image_url)}" alt="" />` : '';
+        const txt = m.text ? `<div>${esc(m.text)}</div>` : '';
+        return `<div class="msg ${side}">${txt}${img}</div>`;
+      }).join('');
+      chatBody.querySelectorAll('.msg img').forEach(function(im){
+        im.addEventListener('click', function(){
+          overlayImg.src = this.src;
+          overlay.classList.add('open');
+        });
+      });
+    }
+
+    async function send(){
+      const fd = new FormData();
+      if (textEl.value.trim()) fd.append('text', textEl.value.trim());
+      if (fileEl.files && fileEl.files[0]) fd.append('image', fileEl.files[0]);
+      if (!fd.has('text') && !fd.has('image')) return;
+      try{
+        const res = await fetch(`/chat/send/${encodeURIComponent(other)}`, { method:'POST', body: fd });
+        if(!res.ok) return;
+        const data = await res.json();
+        // append
+        const m = data.message;
+        const side = m.is_me ? 'me' : 'them';
+        const img = m.image_url ? `<img src=\"${esc(m.image_url)}\" alt=\"\" />` : '';
+        const txt = m.text ? `<div>${esc(m.text)}</div>` : '';
+        chatBody.insertAdjacentHTML('beforeend', `<div class="msg ${side}">${txt}${img}</div>`);
+        chatBody.scrollTop = chatBody.scrollHeight;
+        textEl.value = '';
+        fileEl.value = '';
+        if (previewEl){ previewEl.classList.add('hidden'); previewEl.removeAttribute('src'); }
+        const lastImg = chatBody.querySelector('.msg:last-child img');
+        if (lastImg){
+          lastImg.addEventListener('click', function(){
+            overlayImg.src = this.src;
+            overlay.classList.add('open');
+          });
+        }
+      }catch(e){}
+    }
+
+    sendBtn.addEventListener('click', send);
+    textEl.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); send(); } });
+    fileEl.addEventListener('change', function(){
+      if (this.files && this.files[0]){
+        const url = URL.createObjectURL(this.files[0]);
+        previewEl.src = url;
+        previewEl.classList.remove('hidden');
+      } else {
+        previewEl.classList.add('hidden');
+        previewEl.removeAttribute('src');
+      }
+    });
+    overlayClose.addEventListener('click', function(){ overlay.classList.remove('open'); overlayImg.removeAttribute('src'); });
+    overlay.addEventListener('click', function(e){ if(e.target === overlay){ overlay.classList.remove('open'); overlayImg.removeAttribute('src'); } });
+
+    load();
+  })();
+  </script>
+  {% endif %}
 {% endblock %}

@@ -41,6 +41,9 @@
     .follow-primary, .follow-secondary { width:100%; text-align:center; }
     .follow-primary { appearance:none; border:1px solid #1976d2; background:#1976d2; color:#fff; padding:12px 14px; border-radius:10px; font-weight:700; cursor:pointer; }
     .follow-secondary { appearance:none; border:1px solid #ddd; background:#fff; color:#111; padding:12px 14px; border-radius:10px; font-weight:700; cursor:pointer; }
+    /* Message button below follow */
+    .message-btn { display:block; width:100%; text-align:center; text-decoration:none; appearance:none; border:1px solid #1976d2; background:#fff; color:#1976d2; padding:12px 14px; border-radius:10px; font-weight:700; cursor:pointer; }
+    .message-btn:hover { background:#f3f8fe; }
   </style>
 {% endblock %}
 
@@ -83,6 +86,7 @@
         <div class="mutual-note">Tienen {{ mutual_count }} amigos en común</div>
       {% endif %}
       <button id="profileFollowBtn" class="{% if is_following %}follow-secondary{% else %}follow-primary{% endif %}" data-username="{{ username }}" data-following="{{ is_following|yesno:'true,false' }}">{% if is_following %}Dejar de seguir{% else %}Seguir{% endif %}</button>
+      <a class="message-btn" href="{% url 'chat' %}?user={{ username }}">Enviar mensaje</a>
     </section>
     {% endif %}
 
