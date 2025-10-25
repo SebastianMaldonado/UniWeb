@@ -284,19 +284,37 @@ def search_view(request: HttpRequest) -> HttpResponse:
 	except Exception:
 		me_following = set()
 
+	# Print all available hashtags to the server terminal (debug/help)
+	try:
+		rows, _ = db.cypher_query(
+			"MATCH (p:Post) WITH p UNWIND coalesce(p.hashtags, []) AS h "
+			"RETURN collect(DISTINCT toLower(replace(h,'#',''))) AS tags"
+		)
+		all_tags = rows[0][0] if rows and rows[0] else []
+		if all_tags:
+			print("[HASHTAGS] total=", len(all_tags), "tags=", ", ".join(sorted(all_tags)))
+		else:
+			print("[HASHTAGS] No tags found")
+	except Exception:
+		pass
+
 	found_posts: list[Post] = []
 	if q:
 		# Try Cypher for efficiency, fallback to Python filtering
 		try:
 			if mode == 'hashtag':
-				tag = q.lstrip('#').lower()
-				cy = (
-					"MATCH (p:Post) "
-					"WHERE ANY(h IN p.hashtags WHERE toLower(replace(h,'#','')) = toLower($tag)) "
-					"RETURN p ORDER BY coalesce(p.created_at, datetime()) DESC LIMIT 200"
-				)
-				rows, _ = db.cypher_query(cy, {"tag": tag})
-				found_posts = [Post.inflate(r[0]) for r in rows]
+				tag = (q.lstrip('#').lower() or '').strip()
+				if tag:
+					# Substring match within each hashtag item (case-insensitive)
+					cy = (
+						"MATCH (p:Post) "
+						"WHERE ANY(h IN coalesce(p.hashtags, []) WHERE toLower(replace(h,'#','')) CONTAINS toLower($tag)) "
+						"RETURN p ORDER BY coalesce(p.created_at, datetime()) DESC LIMIT 200"
+					)
+					rows, _ = db.cypher_query(cy, {"tag": tag})
+					found_posts = [Post.inflate(r[0]) for r in rows]
+				else:
+					found_posts = []
 			elif mode == 'username':
 				cy = (
 					"MATCH (p:Post) "
@@ -322,8 +340,10 @@ def search_view(request: HttpRequest) -> HttpResponse:
 			qq = q.lower()
 			def matches(p: Post) -> bool:
 				if mode == 'hashtag':
-					tgt = qq.lstrip('#')
-					return any(((h or '').lower().replace('#','') == tgt) for h in (p.hashtags or []))
+					tgt = (qq.lstrip('#') or '').strip()
+					if not tgt:
+						return False
+					return any(tgt in ((h or '').lower().replace('#','')) for h in (p.hashtags or []))
 				if mode == 'username':
 					return qq in (p.author_username or '').lower()
 				# keyword
@@ -333,6 +353,17 @@ def search_view(request: HttpRequest) -> HttpResponse:
 	# Sort by created_at desc
 	try:
 		found_posts.sort(key=lambda p: getattr(p, 'created_at', None) or 0, reverse=True)
+	except Exception:
+		pass
+
+	# Debug print: input and results to server terminal
+	try:
+		print(f"[SEARCH] mode={mode} q={q!r} results={len(found_posts)}")
+		for p in found_posts[:50]:
+			uid = getattr(p, 'uid', '')
+			author = getattr(p, 'author_username', '')
+			title = getattr(p, 'title', '') or ''
+			print(f"[RESULT] q={q!r} -> uid={uid} author=@{author} title={title[:60]}")
 	except Exception:
 		pass
 
