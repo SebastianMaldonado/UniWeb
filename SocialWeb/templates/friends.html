@@ -107,7 +107,7 @@
                 </div>
                 <div>
                   <a href="/user-profile/{{ u.username }}">@{{ u.username }}</a>
-                  <div class="muted">{{ u.mutual_count }} amigos en común</div>
+                  <div class="muted">{{ u.mutual_count }} amigos en común • {{ u.followers_count }} seguidores</div>
                 </div>
                 <div>
                   <button class="follow-btn" data-username="{{ u.username }}" data-following="{{ u.is_following|yesno:'true,false' }}">{{ u.is_following|yesno:'Dejar de seguir,Seguir' }}</button>
@@ -280,12 +280,38 @@
         });
       }
 
-      // Follow/unfollow buttons inside recommendations and popular sections
+      // Centralized follow/unfollow handling across all sections, with followers count update
+      function updateUserUI(uname, following, followersCount){
+        // Update all buttons for this user
+        document.querySelectorAll(`.follow-btn[data-username="${CSS.escape(uname)}"]`).forEach(function(btn){
+          btn.setAttribute('data-following', following ? 'true' : 'false');
+          btn.textContent = following ? 'Dejar de seguir' : 'Seguir';
+          // Update nearby seguidores label if present in the same row
+          const row = btn.closest('.user-row');
+          if (row){
+            const muted = row.querySelector('.muted');
+            if (muted && /seguidores/i.test(muted.textContent || '')){
+              muted.textContent = `${followersCount} seguidores`;
+            }
+          }
+        });
+        // Also update seguidores in any other row for same user (e.g., duplicates across tabs)
+        document.querySelectorAll(`.user-row`).forEach(function(row){
+          const link = row.querySelector('a[href^="/user-profile/"]');
+          if (link && (link.getAttribute('href') || '').endsWith(`/${uname}`)){
+            const muted = row.querySelector('.muted');
+            if (muted && /seguidores/i.test(muted.textContent || '')){
+              muted.textContent = `${followersCount} seguidores`;
+            }
+          }
+        });
+      }
       const panel = document.querySelector('.panel');
       if (panel){
         panel.addEventListener('click', async function(e){
           const btn = e.target.closest('.follow-btn');
           if (!btn) return;
+          e.preventDefault();
           const uname = btn.getAttribute('data-username');
           if (!uname) return;
           try{
@@ -293,9 +319,8 @@
             if(!res.ok) return;
             const data = await res.json();
             const following = !!data.following;
-            btn.setAttribute('data-following', following ? 'true' : 'false');
-            btn.textContent = following ? 'Dejar de seguir' : 'Seguir';
-            document.dispatchEvent(new CustomEvent('follow-changed', { detail: { username: uname, following } }));
+            const followersCount = typeof data.followers_count === 'number' ? data.followers_count : 0;
+            updateUserUI(uname, following, followersCount);
           }catch(err){ /* ignore */ }
         });
       }

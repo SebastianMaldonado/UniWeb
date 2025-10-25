@@ -15,7 +15,7 @@ from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 from neomodel import db
 
-from .models import User, Post, Comment, Notification, Message, Community
+from .models import User, Post, Comment, Notification, Message, Community, Note
 
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
@@ -1002,6 +1002,37 @@ def chat_view(request: HttpRequest) -> HttpResponse:
 			"unread_count": unread_count,
 			"last_unread_ago": last_ago,
 		})
+
+	# Build notes for mutual friends (and myself)
+	try:
+		following_nodes = list(me.following.all()) if me else []
+	except Exception:
+		following_nodes = []
+	try:
+		followers_nodes = list(me.followers.all()) if me else []
+	except Exception:
+		followers_nodes = []
+	following_set = {u.username for u in following_nodes}
+	followers_set = {u.username for u in followers_nodes}
+	mutual_usernames = following_set.intersection(followers_set)
+	if me_username:
+		mutual_usernames.add(me_username)
+	notes_ctx = []
+	for uname in sorted(mutual_usernames):
+		try:
+			n = Note.nodes.filter(author_username=uname).first()
+		except Exception:
+			n = None
+		if not n:
+			continue
+		u = _get_user_by_username(uname)
+		notes_ctx.append({
+			"author_username": uname,
+			"profile_image_url": getattr(u, "profile_image_url", "") if u else "",
+			"text": getattr(n, 'text', '') or '',
+			"is_me": (uname == me_username),
+			"created_at": getattr(n, 'created_at', None).isoformat() if getattr(n, 'created_at', None) else '',
+		})
 	# Optional preselected user via query param
 	sel_username = (request.GET.get('user', '') or '').strip()
 	sel_user = _get_user_by_username(sel_username) if sel_username else None
@@ -1011,12 +1042,59 @@ def chat_view(request: HttpRequest) -> HttpResponse:
 			"username": sel_user.username,
 			"profile_image_url": getattr(sel_user, "profile_image_url", "") or "",
 		}
+	has_my_note = any(d.get('is_me') for d in notes_ctx)
 	return render(request, "chat.html", {
 		"following": following_ctx,
 		"following_json": json.dumps(following_ctx),
 		"selected": sel_ctx,
 		"selected_username": sel_ctx["username"] if sel_ctx else "",
+		"notes": notes_ctx,
+		"has_my_note": has_my_note,
+		"me_username": me_username,
+		"me_profile_image_url": getattr(me, 'profile_image_url', '') if me else '',
 	})
+
+
+@csrf_exempt
+def chat_note_upsert(request: HttpRequest) -> HttpResponse:
+	maybe = _login_required(request)
+	if maybe:
+		return maybe
+	if request.method != 'POST':
+		return HttpResponse(status=405)
+	me_username = _get_logged_in_username(request)
+	me = _get_user_by_username(me_username)
+	if not me:
+		return HttpResponse(status=403)
+	text = (request.POST.get('text', '') or '').strip()
+	if not text:
+		return HttpResponse(json.dumps({"error": "La nota no puede estar vacía"}), content_type="application/json", status=400)
+	if len(text) > 25:
+		return HttpResponse(json.dumps({"error": "Máximo 25 caracteres"}), content_type="application/json", status=400)
+	# Upsert
+	try:
+		n = Note.nodes.filter(author_username=me_username).first()
+	except Exception:
+		n = None
+	if n:
+		n.text = text
+		try:
+			from datetime import datetime
+			n.created_at = datetime.utcnow()
+		except Exception:
+			pass
+		n.save()
+	else:
+		n = Note(author_username=me_username, author_uid=getattr(me, 'uid', '') or '', text=text).save()
+	return HttpResponse(json.dumps({
+		"note": {
+			"author_username": me_username,
+			"profile_image_url": getattr(me, 'profile_image_url', '') or '',
+			"text": text,
+			"is_me": True,
+			"created_at": getattr(n, 'created_at', None).isoformat() if getattr(n, 'created_at', None) else ''
+		}
+	}), content_type="application/json")
 
 
 def _serialize_message(m: Message, me_username: str) -> dict:
@@ -1523,7 +1601,12 @@ def follow_toggle(request: HttpRequest, username: str) -> HttpResponse:
 			).save()
 		except Exception:
 			pass
-	return HttpResponse(json.dumps({"following": following}), content_type="application/json")
+	# Compute updated followers count for target
+	try:
+		followers_count = len(list(target.followers.all()))
+	except Exception:
+		followers_count = 0
+	return HttpResponse(json.dumps({"following": following, "followers_count": followers_count}), content_type="application/json")
 
 
 def _resolve_post_uid_for_comment(comment_uid: str) -> Optional[str]:

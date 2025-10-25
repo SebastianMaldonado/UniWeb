@@ -19,6 +19,7 @@ urlpatterns = [
     path("community/<str:uid>/edit", views.edit_community_view, name="edit_community"),
     path("community/<str:uid>/join-toggle", views.community_join_toggle, name="community_join_toggle"),
     path("chat", views.chat_view, name="chat"),
+    path("chat/note", views.chat_note_upsert, name="chat_note"),
     path("chat/messages/<str:username>", views.chat_messages, name="chat_messages"),
     path("chat/send/<str:username>", views.chat_send, name="chat_send"),
     path("profile", views.profile_view, name="profile"),

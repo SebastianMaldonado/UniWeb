@@ -141,3 +141,18 @@ class Message(StructuredNode):
 
 	def __str__(self) -> str:  # pragma: no cover
 		return f"Message(from={self.sender_username}, to={self.receiver_username}, text={(self.text or '')[:20]!r})"
+
+
+class Note(StructuredNode):
+	"""Broadcast note authored by a user and visible to mutual friends.
+
+	Only one note per author; enforced via unique author_username.
+	"""
+	uid = UniqueIdProperty()
+	author_username = StringProperty(required=True, unique_index=True)
+	author_uid = StringProperty(required=False, index=True)
+	text = StringProperty(required=True)  # enforce 25-char limit in views; DB allows up to ~string size
+	created_at = DateTimeProperty(default_now=True, index=True)
+
+	def __str__(self) -> str:  # pragma: no cover
+		return f"Note(author={self.author_username}, text={self.text[:20]!r})"

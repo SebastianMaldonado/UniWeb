@@ -5,7 +5,7 @@
     /* Altura fija del área de chat: viewport - topbar (56) - bottombar (64) - padding vertical de content-inner (32) */
     .chat-page { display:grid; grid-template-columns: 280px 1fr; gap:12px; height: calc(100vh - 56px - 64px - 32px); }
     .chat-sidebar { border:1px solid #eee; border-radius:12px; background:#fff; overflow:auto; height: 100%; }
-    .chat-main { border:1px solid #eee; border-radius:12px; background:#fff; display:grid; grid-template-rows: auto 1fr auto; min-height: 480px; height: 100%; }
+  .chat-main { border:1px solid #eee; border-radius:12px; background:#fff; display:grid; grid-template-rows: 150px auto 1fr auto; min-height: 480px; height: 100%; }
   .chat-user { display:grid; grid-template-columns: 40px 1fr auto; gap:10px; align-items:center; padding:10px 12px; cursor:pointer; text-decoration:none; color:#111; }
     .chat-user + .chat-user { border-top:1px solid #f3f3f3; }
     .chat-user:hover { background:#fafafa; }
@@ -33,6 +33,36 @@
   .img-overlay .inner { position:relative; }
   .img-overlay img { max-width:92vw; max-height:92vh; border-radius:8px; box-shadow:0 20px 60px rgba(0,0,0,0.4); }
   .img-overlay .close { position:absolute; top:-10px; right:-10px; width:32px; height:32px; border-radius:999px; background:#fff; border:1px solid #ddd; display:flex; align-items:center; justify-content:center; cursor:pointer; font-weight:700; }
+  /* Notes strip (fixed height, horizontal scroll) */
+  .notes-strip { padding:10px 12px; border-bottom:1px solid #eee; overflow-x:auto; overflow-y:hidden; height:150px; min-height:0; position:relative; }
+  .notes-list { display:flex; gap:12px; align-items:flex-start; flex-wrap:nowrap; }
+  /* Prevent flex shrinking to keep perfect squares (reduced 25%) */
+  .note-item { flex: 0 0 90px; width:90px; min-width:90px; }
+  .note-box { width:90px; height:90px; position:relative; overflow:hidden; }
+  /* Gradient fades to hint scroll */
+  .notes-strip::after, .notes-strip::before { content:''; position:absolute; top:0; height:100%; width:36px; pointer-events:none; display:none; }
+  .notes-strip::after { right:0; background:linear-gradient(to left, rgba(255,255,255,1), rgba(255,255,255,0)); }
+  .notes-strip::before { left:0; background:linear-gradient(to right, rgba(255,255,255,1), rgba(255,255,255,0)); }
+  .notes-strip.show-right::after { display:block; }
+  .notes-strip.show-left::before { display:block; }
+  /* Avatar circle bottom-left occupying 75% */
+  .note-avatar { position:absolute; z-index:1; left:0; bottom:0; width:75%; height:75%; border-radius:999px; overflow:hidden; border:1px solid #eee; background:#f5f5f5; }
+  .note-avatar img { width:100%; height:100%; object-fit:cover; display:block; }
+  /* Note bubble top-right occupying 75% */
+  .note-bubble { position:absolute; z-index:2; right:0; top:0; width:75%; height:75%; background:#f7f7ff; border:1px solid #e6e6ff; border-radius:12px; padding:8px; font-weight:600; word-break:break-word; font-size:12px; display:flex; align-items:center; justify-content:center; text-align:center; box-sizing:border-box; }
+  .note-item.me .note-bubble { background:#fff7e6; border-color:#ffe0b2; }
+  .note-username { font-size:12px; color:#777; margin-top:6px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; display:block; }
+  .note-add { background:#f5fff5; border:1px dashed #b2dfdb; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#1976d2; }
+  /* Note editor overlay */
+  .note-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.5); display:none; align-items:center; justify-content:center; z-index:3001; }
+  .note-overlay.open { display:flex; }
+  .note-modal { background:#fff; border:1px solid #eee; border-radius:12px; width: min(94vw, 420px); padding:16px; box-shadow:0 12px 40px rgba(0,0,0,0.25); }
+  .note-modal h3 { margin:0 0 10px; font-size:16px; }
+  .note-modal .row { display:flex; gap:8px; align-items:center; }
+  .note-modal input[type="text"] { flex:1; padding:10px 12px; border:1px solid #ddd; border-radius:10px; font-size:14px; }
+  .note-modal .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
+  .note-modal button { appearance:none; border:1px solid #ddd; background:#fff; padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600; }
+  .note-modal .primary { background:#1976d2; color:#fff; border-color:#1976d2; }
   </style>
 
   <div class="chat-page">
@@ -66,6 +96,48 @@
     </aside>
 
     <section class="chat-main">
+      <!-- Notes strip -->
+      <div class="notes-strip" id="notesStrip">
+        <div class="notes-list" id="notesList">
+          {% if not has_my_note %}
+            <div class="note-item me" data-author="{{ me_username }}" data-is-me="true">
+              <div class="note-box">
+                <div class="note-avatar">
+                  {% if me_profile_image_url %}
+                    <img src="{{ me_profile_image_url }}" alt="{{ me_username }}" />
+                  {% else %}
+                    <img alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28'><rect fill='%23eeeeee' width='100%' height='100%'/></svg>" />
+                  {% endif %}
+                </div>
+                <div class="note-bubble note-add" title="Añadir nota">＋ Añadir nota</div>
+              </div>
+              <div class="note-username">@{{ me_username }}</div>
+            </div>
+          {% endif %}
+          {% for n in notes %}
+            <div class="note-item {% if n.is_me %}me{% endif %}"
+                 data-author="{{ n.author_username }}"
+                 data-is-me="{{ n.is_me|yesno:'true,false' }}"
+                 data-text="{{ n.text }}"
+                 data-created-at="{{ n.created_at }}"
+                 data-profile-image="{{ n.profile_image_url }}">
+              <div class="note-box">
+                <div class="note-avatar">
+                  {% if n.profile_image_url %}
+                    <img src="{{ n.profile_image_url }}" alt="{{ n.author_username }}" />
+                  {% else %}
+                    <img alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28'><rect fill='%23eeeeee' width='100%' height='100%'/></svg>" />
+                  {% endif %}
+                </div>
+                <div class="note-bubble" title="{% if n.is_me %}Click para editar{% else %}@{{ n.author_username }}{% endif %}">{{ n.text|truncatechars:10 }}</div>
+              </div>
+              <div class="note-username">@{{ n.author_username }}</div>
+            </div>
+          {% empty %}
+            {% if has_my_note %}{% else %}<div class="muted">No hay notas aún</div>{% endif %}
+          {% endfor %}
+        </div>
+      </div>
       {% if selected %}
       <div class="chat-header">
         <div class="ch-img">
@@ -104,6 +176,26 @@
         });
       });
     }
+  })();
+  </script>
+  <script>
+  (function(){
+    const strip = document.getElementById('notesStrip');
+    if (!strip) return;
+    function updateFades(){
+      const canScroll = strip.scrollWidth > strip.clientWidth + 1;
+      if (!canScroll){
+        strip.classList.remove('show-left','show-right');
+        return;
+      }
+      const atStart = strip.scrollLeft <= 2;
+      const atEnd = (strip.scrollLeft + strip.clientWidth) >= (strip.scrollWidth - 2);
+      strip.classList.toggle('show-left', !atStart);
+      strip.classList.toggle('show-right', !atEnd);
+    }
+    updateFades();
+    strip.addEventListener('scroll', updateFades);
+    window.addEventListener('resize', updateFades);
   })();
   </script>
 
@@ -196,4 +288,146 @@
   })();
   </script>
   {% endif %}
+  <!-- Note editor overlay -->
+  <div id="noteOverlay" class="note-overlay" aria-hidden="true">
+    <div class="note-modal" role="dialog" aria-modal="true" aria-labelledby="noteTitle">
+      <h3 id="noteTitle">Tu nota de difusión</h3>
+      <div class="row">
+        <input id="noteText" type="text" placeholder="Máximo 25 caracteres" maxlength="25" />
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px; font-size:12px; color:#777; margin-top:6px;">
+        <span id="noteCount">0/25</span>
+      </div>
+      <div class="actions">
+        <button id="noteCancel" type="button">Cancelar</button>
+        <button id="noteSave" class="primary" type="button">Guardar</button>
+      </div>
+    </div>
+  </div>
+  <script>
+  (function(){
+    const notesEl = document.getElementById('notesList');
+    const overlay = document.getElementById('noteOverlay');
+    const input = document.getElementById('noteText');
+  const btnSave = document.getElementById('noteSave');
+    const btnCancel = document.getElementById('noteCancel');
+  const countEl = document.getElementById('noteCount');
+    let currentItem = null;
+
+    if (!notesEl || !overlay || !input || !btnSave || !btnCancel) return;
+
+    function openModal(initial){
+      input.value = initial || '';
+      if (countEl) countEl.textContent = (input.value || '').length + '/25';
+      overlay.classList.add('open');
+      overlay.setAttribute('aria-hidden', 'false');
+      setTimeout(()=>{ input.focus(); input.select(); }, 0);
+    }
+    function closeModal(){
+      overlay.classList.remove('open');
+      overlay.setAttribute('aria-hidden', 'true');
+      currentItem = null;
+    }
+    function truncateWords5(s){
+      const parts = (s||'').trim().split(/\s+/);
+      if (parts.length <= 5) return (s||'').trim();
+      return parts.slice(0,5).join(' ') + '…';
+    }
+    btnCancel.addEventListener('click', closeModal);
+    overlay.addEventListener('click', function(e){ if (e.target === overlay) closeModal(); });
+    input.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeModal(); });
+    input.addEventListener('input', function(){ if (countEl) countEl.textContent = (input.value || '').length + '/25'; });
+    btnSave.addEventListener('click', function(){
+      const text = (input.value || '').trim();
+      if (!text){ alert('La nota no puede estar vacía'); return; }
+      if (text.length > 25){ alert('Máximo 25 caracteres'); return; }
+      const fd = new FormData();
+      fd.append('text', text);
+      fetch('/chat/note', { method:'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+          if (!data || !data.note) return;
+          if (currentItem){
+            const add = currentItem.querySelector('.note-add');
+            if (add) add.classList.remove('note-add');
+            const b = currentItem.querySelector('.note-bubble');
+            if (b) {
+              const t = (data.note.text || '');
+              b.textContent = (t.length > 10 ? t.slice(0,10) + '…' : t);
+            }
+            currentItem.setAttribute('data-is-me','true');
+            currentItem.setAttribute('data-text', data.note.text || '');
+            if (data.note.created_at) currentItem.setAttribute('data-created-at', data.note.created_at);
+          }
+          closeModal();
+        }).catch(()=>{});
+    });
+    // Viewer overlay for other users
+    const viewer = document.createElement('div');
+    viewer.className = 'note-overlay';
+    viewer.id = 'noteViewer';
+    viewer.setAttribute('aria-hidden','true');
+    viewer.innerHTML = '<div class="note-modal" role="dialog" aria-modal="true"><div id="viewerHeader" style="display:flex; align-items:center; gap:10px; cursor:pointer;">'
+      + '<div style="width:40px; height:40px; border-radius:999px; overflow:hidden; border:1px solid #eee; background:#f5f5f5;"><img id="viewerImg" alt="" style="width:100%; height:100%; object-fit:cover; display:block;"/></div>'
+      + '<strong id="viewerUser">@usuario</strong></div>'
+      + '<div id="viewerText" style="margin-top:12px; white-space:pre-wrap; word-break:break-word;"></div>'
+      + '<div id="viewerAgo" style="margin-top:8px; color:#777; font-size:12px;"></div>'
+      + '<div style="display:flex; justify-content:flex-end; margin-top:12px;"><button id="viewerClose" type="button">Cerrar</button></div>'
+      + '</div>';
+    document.body.appendChild(viewer);
+    function openViewer(data){
+      const v = document.getElementById('noteViewer');
+      const img = document.getElementById('viewerImg');
+      const user = document.getElementById('viewerUser');
+      const txt = document.getElementById('viewerText');
+      const ago = document.getElementById('viewerAgo');
+      if (!v || !img || !user || !txt || !ago) return;
+      img.src = data.profile_image_url || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'40\' height=\'40\'><rect fill=\'%23eeeeee\' width=\'100%\' height=\'100%\'/></svg>';
+      user.textContent = '@' + (data.username || '');
+      txt.textContent = data.text || '';
+      ago.textContent = timeAgo(data.created_at);
+      v.classList.add('open');
+      v.setAttribute('aria-hidden','false');
+      const header = document.getElementById('viewerHeader');
+      if (header) header.onclick = function(){ window.location.href = '/user-profile/' + encodeURIComponent(data.username || ''); };
+      const btnClose = document.getElementById('viewerClose');
+      if (btnClose) btnClose.onclick = function(){ v.classList.remove('open'); v.setAttribute('aria-hidden','true'); };
+      v.onclick = function(e){ if (e.target === v){ v.classList.remove('open'); v.setAttribute('aria-hidden','true'); } };
+    }
+    function timeAgo(iso){
+      if (!iso) return '';
+      try{
+        const dt = new Date(iso);
+        const now = new Date();
+        const diffMs = now - dt;
+        const sec = Math.floor(diffMs/1000);
+        const min = Math.floor(sec/60);
+        const hr = Math.floor(min/60);
+        const day = Math.floor(hr/24);
+        if (day > 0) return `hace ${day} día${day!==1?'s':''}`;
+        if (hr > 0) return `hace ${hr} hora${hr!==1?'s':''}`;
+        return `hace ${Math.max(1,min)} minuto${min!==1?'s':''}`;
+      }catch(e){ return ''; }
+    }
+    notesEl.addEventListener('click', function(e){
+      const bubble = e.target.closest('.note-bubble');
+      if (!bubble) return;
+      const item = bubble.closest('.note-item');
+      if (!item) return;
+      const isMe = (item.getAttribute('data-is-me') === 'true');
+      if (isMe){
+        currentItem = item;
+        const initial = bubble.classList.contains('note-add') ? '' : (item.getAttribute('data-text') || '').trim();
+        openModal(initial);
+      } else {
+        openViewer({
+          username: item.getAttribute('data-author') || '',
+          profile_image_url: item.getAttribute('data-profile-image') || '',
+          text: item.getAttribute('data-text') || '',
+          created_at: item.getAttribute('data-created-at') || ''
+        });
+      }
+    });
+  })();
+  </script>
 {% endblock %}
